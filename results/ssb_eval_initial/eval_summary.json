@@ -1,0 +1,7 @@
+{
+  "skill": "/root/autodl-tmp/skillopt_repro/SkillOpt/skillopt/envs/spreadsheetbench/skills/initial.md",
+  "split": "valid_unseen",
+  "n_items": 280,
+  "hard": 0.45714285714285713,
+  "soft": 0.45714285714285713
+}

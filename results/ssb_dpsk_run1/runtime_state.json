@@ -1,0 +1,10 @@
+{
+  "last_completed_step": 8,
+  "current_skill_path": "/root/autodl-tmp/skillopt_repro/SkillOpt/outputs/ssb_dpsk_run1/skills/skill_v0008.md",
+  "current_score": 0.625,
+  "current_origin": "slow_update_epoch_04",
+  "best_skill_path": "/root/autodl-tmp/skillopt_repro/SkillOpt/outputs/ssb_dpsk_run1/best_skill.md",
+  "best_score": 0.625,
+  "best_step": 6,
+  "best_origin": "step_0006"
+}
