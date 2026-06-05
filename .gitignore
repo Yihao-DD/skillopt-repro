@@ -1,0 +1,13 @@
+# 官方 fork 自带 git，独立管理
+SkillOpt/
+
+# 凭据
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 运行产物（如果挪到工作区）
+outputs/
