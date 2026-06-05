@@ -16,7 +16,7 @@
 |----|------|------|------|----------------|
 | T000 | 复现 SkillOpt | **DONE** | — | ✅ DeepSeek：SearchQA EM 0.747→0.804（4 accept 后 36 连拒，已推 GitHub）；**+ 主战场 SpreadsheetBench EM 0.457→0.529（+7.1），平台期再现（8 步 2 收 6 拒）** → `ssb_baseline_report.md`/`results/ssb_dpsk_run1` |
 | T001 | $K=1$ 回归测试（档案单格 == SkillOpt） | **REVIEW** (06-06) | T000 | ✅ 5 测试 GREEN：gate-oracle 等价×2 + slow-update 保护×2 + 真实 ssb history replay×1。语义 → `decisions/ADR-0001` |
-| T002 | descriptor v0（τ→φ→Tier-A g→cell，**不碰文字**） | TODO | T000 | cell 稳定（命题 3.2）。**不依赖 API** |
+| T002 | descriptor v0（τ→φ→Tier-A g→cell，**不碰文字**） | **REVIEW** (06-06) | T000 | ✅ 代码级 φ；8 测试 GREEN（φ有界 / 稳定 std<0.08 / best≠initial 可分）。轴选 → `ADR-0002` |
 | T003 | 楔子 + 逃逸依赖测（**在 SpreadsheetBench 上**） | TODO | T001,T002,BLOCKER-1 | 高余量下 SkillOpt 是否停在更高峰之下；变异源/可分性（命题 3.8 i/ii） |
 | **GATE-0** | payoff 在不在（SpreadsheetBench）？变异源够不够？→ 写 ADR | TODO | T003 | 否则转向 / 止损 |
 
@@ -42,4 +42,4 @@
 | T013 | (理论，导师向，可选) 调度 `Π` 的 regret 推导 | TODO | T007 | SPEC §9 |
 
 ---
-_当前活跃任务_：**T001 → REVIEW**（K=1 回归 5 测试 GREEN，AutoDL py3.12 / 0.34s / 零付费；待复核转 DONE）。下一个：**T002**（descriptor v0，不依赖 API）。
+_当前活跃任务_：**T001 + T002 → REVIEW**（K=1 回归 + descriptor v0，共 **13 测试 GREEN**，AutoDL py3.12 / 零付费）。下一个：**T003**（楔子 + 逃逸依赖测，依赖 BLOCKER-1 付费）；或先复核 T001/T002 转 DONE。

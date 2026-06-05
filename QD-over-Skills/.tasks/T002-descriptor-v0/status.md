@@ -1,0 +1,10 @@
+# T002 状态
+- 状态: REVIEW
+- 最后更新: 2026-06-06  by (claude session)
+- 进度:
+  - ✅ 探明 SpreadsheetBench 轨迹结构；发现 **result 级字段(n_turns/exec_ok)在 best/initial 上饱和**(只 `solved` 差 0.072)，**代码级字段(pandas 率/代码长度/控制流/op)区分打法** → `ADR-0002`。
+  - ✅ `qd/descriptor.py`: `code_features` 解析 + φ(τ)∈[0,1]^5 + Tier-A g(复杂度 / 库策略 2 轴) + 网格 cell。
+  - ✅ **8 测试 GREEN**(AutoDL py3.12，零付费)：φ 有界/确定、code 解析、**稳定性 probe 重采 b 各轴 std<0.08(命题 3.2)**、cell 确定、**best≠initial 可分(命题 3.8 ii)**、strategy 轴跟踪 pandas。
+  - ✅ fixtures: `qd/tests/fixtures/ssb_{best,initial}_feat.jsonl`(各 279 任务代码特征，从 `results/ssb_dpsk_run1` 抽)。
+- Blocker: 无(不依赖 API)。
+- 待复核 → DONE 后: **T003**(楔子 + 逃逸依赖测，需 BLOCKER-1 付费)。

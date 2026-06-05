@@ -1,0 +1,15 @@
+# T002 descriptor v0
+- 目标(一句话): 从轨迹 τ 抽有界 φ → Tier-A g → cell,对 skill 输出**稳定且可区分行为**的 cell(不碰文字、不依赖 API)。
+- 为什么: BRIEF 组件 `b`(descriptor);SPEC §3.1 + 命题 3.2(稳定性)、命题 3.8 依赖 ii(分得开不同打法）。QD「行为分格」的地基,SPEC §8 称「生死手」。
+- 范围内:
+  - φ(τ) 从 SpreadsheetBench codegen 轨迹（`predictions/<id>/code.py` + `n_turns`）抽**代码级**行为特征。
+  - Tier-A 手设 g(2 轴：解题复杂度 / 库策略)。
+  - 网格 cell 分配。
+  - 用真实 ssb 轨迹验证稳定性 + best/initial 区分性。
+- 范围外: Tier-B 学出 descriptor(T010)；楔子逃逸完整验证(T003)；变异/档案/预算(T004–T007)。
+- 依赖: T000。
+- 验收标准:
+  - [x] φ(τ) ∈ [0,1]^p、确定性。
+  - [x] 稳定性: 同 skill probe 重采,b 各轴 std < 0.08(命题 3.2)。
+  - [x] 区分性: best vs initial 落不同 b（代码级捕捉打法差，result 级捕捉不到）。
+- 关联: SPEC §3.1 / 命题 3.2 / 3.8(ii)；`decisions/ADR-0002-descriptor-axes.md`。
