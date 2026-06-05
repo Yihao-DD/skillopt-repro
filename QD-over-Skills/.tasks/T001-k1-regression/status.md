@@ -1,14 +1,11 @@
 # T001 状态
-- 状态: IN_PROGRESS
-- 最后更新: 2026-06-05  by (claude session)
+- 状态: REVIEW
+- 最后更新: 2026-06-06  by (claude session)
 - 进度:
-  - ✅ 深读 `SkillOpt/` 源码 + `decisions/ADR-0001`(accept 语义 / current-best / slow-update / 受保护字段,带 file:line)。
-  - ✅ 搭 `qd/` 包(workspace 根,import 已 editable 安装的 `skillopt`),TDD 实现 K=1 `U`(`qd/archive.py`):单 cell 档案 + 格内严格 `>` gate、平局拒;elite 同时扮 current/best。
-  - ✅ 2 测试 GREEN(`qd/tests/test_k1_reduces_to_skillopt.py`,RED→GREEN 全程已验、零付费、毫秒级):
-    ① 严格更优 → accept(对 `evaluate_gate` oracle);
-    ② 5 步混合序列**逐步对齐** `evaluate_gate`(accept / worse-reject / tie-reject / new-best / tie-reject)。
-- Blocker: 无(不依赖 API)。
-- 下一步(给下个 session 的具体动作):
-  1. 受保护 slow-update 字段 characterization 测试:复用 `skillopt.optimizer.skill.apply_patch`,造带 `<!-- SLOW_UPDATE_* -->` 的 skill + 一条 target 落在保护区的 edit,断言保护区不被覆盖(与 SkillOpt 一致)。
-  2. 真实数据回归:从 `results/`(或 `SkillOpt/outputs/`)的 `history.json` 截 (selection_hard, action) 序列,replay 过 qd K=1,与 SkillOpt 记录逐步对齐。
-  3. 跑通 → INDEX 标 REVIEW、写 `summary.md`、`CHANGELOG.md` 记一行。
+  - ✅ 深读 `SkillOpt/` 源码 + `decisions/ADR-0001`（accept 语义 / current==best / slow-update / 受保护字段，带 file:line）。
+  - ✅ 搭 `qd/` 包 + TDD 实现 K=1 `U`（`qd/archive.py`）：单 cell 档案 + 格内严格 `>` gate、平局拒；elite 同时扮 current/best。
+  - ✅ **5 测试 GREEN**（AutoDL Python 3.12.3，`5 passed in 0.34s`，零付费）：
+    - gate-oracle 等价（`qd/tests/test_k1_reduces_to_skillopt.py`）：① 严格更优→accept ② 5 步混合序列逐步对齐 `evaluate_gate`。
+    - characterization（`qd/tests/test_k1_characterization.py`）：③ step edit 落 `SLOW_UPDATE` 保护区→跳过、skill 不变 ④ 普通 append 落保护区之前 ⑤ 真实 SpreadsheetBench run（`results/ssb_dpsk_run1`）8 步 history 逐步 replay（含 step2 平局 reject），`action/current/best/best_step` 全对齐。
+- Blocker: 无（不依赖 API）。
+- 待复核 → DONE 后：进入 **T002**（descriptor v0：τ→φ→Tier-A g→cell，**不碰文字、不依赖 API**）。
