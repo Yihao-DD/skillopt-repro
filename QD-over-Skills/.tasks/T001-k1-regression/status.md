@@ -1,6 +1,6 @@
 # T001 状态
-- 状态: REVIEW
-- 最后更新: 2026-06-06  by (claude session)
+- 状态: DONE
+- 最后更新: 2026-06-07  by Codex
 - 进度:
   - ✅ 深读 `SkillOpt/` 源码 + `decisions/ADR-0001`（accept 语义 / current==best / slow-update / 受保护字段，带 file:line）。
   - ✅ 搭 `qd/` 包 + TDD 实现 K=1 `U`（`qd/archive.py`）：单 cell 档案 + 格内严格 `>` gate、平局拒；elite 同时扮 current/best。
@@ -8,4 +8,5 @@
     - gate-oracle 等价（`qd/tests/test_k1_reduces_to_skillopt.py`）：① 严格更优→accept ② 5 步混合序列逐步对齐 `evaluate_gate`。
     - characterization（`qd/tests/test_k1_characterization.py`）：③ step edit 落 `SLOW_UPDATE` 保护区→跳过、skill 不变 ④ 普通 append 落保护区之前 ⑤ 真实 SpreadsheetBench run（`results/ssb_dpsk_run1`）8 步 history 逐步 replay（含 step2 平局 reject），`action/current/best/best_step` 全对齐。
 - Blocker: 无（不依赖 API）。
-- 待复核 → DONE 后：进入 **T002**（descriptor v0：τ→φ→Tier-A g→cell，**不碰文字、不依赖 API**）。
+  - ✅ 2026-06-07 远程 smoke 复核通过：K=1 原测试保持 GREEN，全套 `tools/test_materialize_searchqa.py qd/tests/` 为 29 passed。
+- 下一步(给下个 session 的具体动作): T001 已关闭；后续 K>1 语义见 T005。

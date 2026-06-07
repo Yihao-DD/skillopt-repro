@@ -15,19 +15,19 @@
 | ID | 任务 | 状态 | 依赖 | 验收要点 / 备注 |
 |----|------|------|------|----------------|
 | T000 | 复现 SkillOpt | **DONE** | — | ✅ DeepSeek：SearchQA EM 0.747→0.804（4 accept 后 36 连拒，已推 GitHub）；**+ 主战场 SpreadsheetBench EM 0.457→0.529（+7.1），平台期再现（8 步 2 收 6 拒）** → `ssb_baseline_report.md`/`results/ssb_dpsk_run1` |
-| T001 | $K=1$ 回归测试（档案单格 == SkillOpt） | **REVIEW** (06-06) | T000 | ✅ 5 测试 GREEN：gate-oracle 等价×2 + slow-update 保护×2 + 真实 ssb history replay×1。语义 → `decisions/ADR-0001` |
-| T002 | descriptor v0（τ→φ→Tier-A g→cell，**不碰文字**） | **REVIEW** (06-06) | T000 | ✅ 代码级 φ；8 测试 GREEN（φ有界 / 稳定 std<0.08 / best≠initial 可分）。轴选 → `ADR-0002` |
-| T003 | 楔子 + 逃逸依赖测（**在 SpreadsheetBench 上**） | TODO | T001,T002,BLOCKER-1 | 高余量下 SkillOpt 是否停在更高峰之下；变异源/可分性（命题 3.8 i/ii） |
+| T001 | $K=1$ 回归测试（档案单格 == SkillOpt） | **DONE** (06-07 smoke) | T000 | ✅ 5 测试 GREEN：gate-oracle 等价×2 + slow-update 保护×2 + 真实 ssb history replay×1。语义 → `decisions/ADR-0001` |
+| T002 | descriptor v0（τ→φ→Tier-A g→cell，**不碰文字**） | **DONE** (06-07 smoke) | T000 | ✅ 代码级 φ；8 测试 GREEN（φ有界 / 稳定 std<0.08 / best≠initial 可分）。轴选 → `ADR-0002` |
+| T003 | 楔子 + 逃逸依赖测（**在 SpreadsheetBench 上**） | BLOCKED (06-07) | T001,T002,BLOCKER-1 | 需付费/API 决策；当前仅有单题 SpreadsheetBench smoke，未做楔子实验 |
 | **GATE-0** | payoff 在不在（SpreadsheetBench）？变异源够不够？→ 写 ADR | TODO | T003 | 否则转向 / 止损 |
 
 ## Phase 1 — 低风险结果
 
 | ID | 任务 | 状态 | 依赖 | 验收要点 |
 |----|------|------|------|----------|
-| T004 | 瞄准着采变异 `V` | TODO | T002 | 采 N 候选，prompt 条件化档案 |
-| T005 | 档案 + 格内 gate `U` | TODO | T001,T002 | 命题 3.4/3.5 |
-| T006 | 去重 + 缓存 + 成本计数 `Π`(一) | TODO | T002,T005 | 昂贵/廉价评估计数（命题 3.9） |
-| T007 | 自适应 k 调度 `Π`(二) | TODO | T005,T006 | plateau 触发探索 |
+| T004 | 瞄准着采变异 `V` | **REVIEW** (06-07 smoke) | T002 | ✅ `qd/variation.py`：archive prompt + novelty quota candidate selection；smoke GREEN |
+| T005 | 档案 + 格内 gate `U` | **REVIEW** (06-07 smoke) | T001,T002 | ✅ `qd/archive.py` K>1：空格收、格内严格 `>`、全局最优单调；smoke GREEN |
+| T006 | 去重 + 缓存 + 成本计数 `Π`(一) | **REVIEW** (06-07 smoke) | T002,T005 | ✅ `qd/budget.py`：行为去重、cache、cheap/expensive 计数；smoke GREEN |
+| T007 | 自适应 k 调度 `Π`(二) | **REVIEW** (06-07 smoke) | T005,T006 | ✅ `qd/scheduler.py`：plateau 检测、候选数/novelty/gamma 调度、UCB cell 选择；smoke GREEN |
 | T008 | Phase-1 集成实验（SpreadsheetBench，**同预算**逃逸） | TODO | T004–T007,BLOCKER-1 | 续爬 vs SkillOpt plateau |
 | **GATE-1** | 同预算逃逸复现了吗？→ 写 ADR | TODO | T008 | |
 
@@ -42,4 +42,4 @@
 | T013 | (理论，导师向，可选) 调度 `Π` 的 regret 推导 | TODO | T007 | SPEC §9 |
 
 ---
-_当前活跃任务_：**T001 + T002 → REVIEW**（K=1 回归 + descriptor v0，共 **13 测试 GREEN**，AutoDL py3.12 / 零付费）。下一个：**T003**（楔子 + 逃逸依赖测，依赖 BLOCKER-1 付费）；或先复核 T001/T002 转 DONE。
+_当前活跃任务_：**T004–T007 → REVIEW**（本地 QD 组件 smoke GREEN，AutoDL py3.12）。**T003 BLOCKED**：楔子/逃逸依赖测需要公司 API/预算决策；在此之前可继续做低成本集成 harness / loop smoke。

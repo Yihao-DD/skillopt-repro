@@ -18,6 +18,26 @@ python -m pip install -e ./SkillOpt -r requirements-extra.txt
 python tools/materialize_searchqa.py          # 生成 SkillOpt/data/searchqa_split
 ```
 
+## VM smoke 一键入口
+公司侧新虚拟机 clone 后可先跑零 API smoke：
+```bash
+bash tools/bootstrap_vm_smoke.sh
+```
+
+需要同时验证数据物化 + dataloader（要求能访问 HuggingFace）：
+```bash
+RUN_DATA_SMOKE=1 bash tools/bootstrap_vm_smoke.sh
+```
+
+需要跑最小真实 API smoke（需先写 `.env`，会产生少量费用）：
+```bash
+cp .env.example .env
+# 填 AZURE_OPENAI_AUTH_MODE / AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY
+RUN_DATA_SMOKE=1 RUN_API_SMOKE=1 bash tools/bootstrap_vm_smoke.sh
+```
+
+脚本会自动补 `SkillOpt/`、checkout 到报告使用的 `ee9931e`、创建 `.venv`、安装依赖并运行 `tools/test_materialize_searchqa.py qd/tests/`。
+
 ## 配置后端（用你的 GPT-5.5 key）
 ```bash
 cp .env.example .env        # 填路线 A 或 B 的 key

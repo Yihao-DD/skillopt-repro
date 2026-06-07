@@ -14,6 +14,15 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class Elite:
+    """One MAP-Elites cell incumbent."""
+
+    skill: str
+    score: float
+    step: int
+
+
+@dataclass(frozen=True)
 class UpdateResult:
     """Outcome of one ``Archive.update`` call.
 
@@ -24,44 +33,86 @@ class UpdateResult:
 
     action: str
     cell: int = 0
+    previous_score: float | None = None
+    new_score: float | None = None
 
 
 class Archive:
-    """MAP-Elites archive. K=1 = a single cell (reduces to SkillOpt)."""
+    """MAP-Elites archive.
+
+    K=1 keeps the original SkillOpt reduction used by T001. K>1 stores one
+    strict-gated elite per behavior cell: an empty cell accepts immediately;
+    an occupied cell accepts only when ``cand_score > elite.score``.
+    """
 
     def __init__(self, k: int = 1, baseline_skill: str = "", baseline_score: float = -1.0) -> None:
+        if k < 1:
+            raise ValueError("k must be >= 1")
         self.k = k
-        # K=1: one cell; its elite is (skill, score, step) and plays current==best.
-        self._elite_skill = baseline_skill
-        self._elite_score = baseline_score
-        self._elite_step = 0
+        self._elites: dict[int, Elite] = {}
+        if baseline_skill or baseline_score > float("-inf"):
+            self._elites[0] = Elite(skill=baseline_skill, score=baseline_score, step=0)
 
-    def update(self, candidate_skill: str, cand_score: float, step: int) -> UpdateResult:
-        """Per-cell strict gate (ties reject). K=1 → single cell (cell 0)."""
-        if cand_score > self._elite_score:
-            self._elite_skill = candidate_skill
-            self._elite_score = cand_score
-            self._elite_step = step
-            return UpdateResult(action="accept", cell=0)
-        return UpdateResult(action="reject", cell=0)
+    def update(self, candidate_skill: str, cand_score: float, step: int, cell: int = 0) -> UpdateResult:
+        """Per-cell strict gate (ties reject). K=1 -> single cell (cell 0)."""
+        cell = self._normalize_cell(cell)
+        old = self._elites.get(cell)
+        if old is None or cand_score > old.score:
+            self._elites[cell] = Elite(skill=candidate_skill, score=cand_score, step=step)
+            return UpdateResult(
+                action="accept",
+                cell=cell,
+                previous_score=None if old is None else old.score,
+                new_score=cand_score,
+            )
+        return UpdateResult(
+            action="reject",
+            cell=cell,
+            previous_score=old.score,
+            new_score=old.score,
+        )
+
+    def _normalize_cell(self, cell: int) -> int:
+        cell = int(cell)
+        if self.k == 1:
+            return 0
+        if not 0 <= cell < self.k:
+            raise ValueError(f"cell must be in [0, {self.k}), got {cell}")
+        return cell
+
+    def elite(self, cell: int) -> Elite | None:
+        """Return the current elite for ``cell`` if occupied."""
+        return self._elites.get(self._normalize_cell(cell))
+
+    def occupied_cells(self) -> tuple[int, ...]:
+        return tuple(sorted(self._elites))
+
+    def scores(self) -> dict[int, float]:
+        return {cell: elite.score for cell, elite in self._elites.items()}
+
+    @property
+    def global_best(self) -> Elite:
+        if not self._elites:
+            raise ValueError("archive is empty")
+        return max(self._elites.values(), key=lambda e: (e.score, -e.step))
 
     # K=1: the single cell's elite plays both SkillOpt's `current` and `best`.
     @property
     def current_skill(self) -> str:
-        return self._elite_skill
+        return self.global_best.skill
 
     @property
     def current_score(self) -> float:
-        return self._elite_score
+        return self.global_best.score
 
     @property
     def best_skill(self) -> str:
-        return self._elite_skill
+        return self.global_best.skill
 
     @property
     def best_score(self) -> float:
-        return self._elite_score
+        return self.global_best.score
 
     @property
     def best_step(self) -> int:
-        return self._elite_step
+        return self.global_best.step

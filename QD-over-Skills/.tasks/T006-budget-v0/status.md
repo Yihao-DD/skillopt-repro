@@ -1,0 +1,11 @@
+# T006 状态
+- 状态: REVIEW
+- 最后更新: 2026-06-07 by Codex
+- 进度:
+  - ✅ `qd/budget.py` 增加 `BehaviorCandidate`、行为距离、按 cell/radius 去重。
+  - ✅ 每个行为簇保留 probe_score 最优代表。
+  - ✅ `EvalCounter` 统计 cheap probe rollouts、expensive evals/rollouts、cache hits。
+  - ✅ smoke: `qd/tests/test_budget_smoke.py`。
+- Blocker: 无（本地纯 Python）。
+- 下一步:
+  - Review 后把 `EvalCounter` 接入 QD loop smoke，确保同预算对齐能机检。

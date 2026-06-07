@@ -1,0 +1,11 @@
+# T007 状态
+- 状态: REVIEW
+- 最后更新: 2026-06-07 by Codex
+- 进度:
+  - ✅ `qd/scheduler.py` 增加 plateau 检测。
+  - ✅ `PlateauScheduler` 在平台期提高 `n_candidates`、`min_novel` 与 `gamma`。
+  - ✅ `ucb_cell_score` / `choose_parent_cell` 覆盖 gain + uncertainty + novelty。
+  - ✅ smoke: `qd/tests/test_scheduler_smoke.py`。
+- Blocker: 无（本地纯 Python）。
+- 下一步:
+  - Review 后把调度决策接入 QD loop smoke，和 T004 variation request 联动。

@@ -1,0 +1,12 @@
+# T005 状态
+- 状态: REVIEW
+- 最后更新: 2026-06-07 by Codex
+- 进度:
+  - ✅ `qd/archive.py` 从 K=1 扩为 K>=1 MAP-Elites archive。
+  - ✅ 每格 elite 独立维护；空格直接收；占用格严格 `cand_score > elite.score` 才收；平局拒。
+  - ✅ `global_best` / `occupied_cells` / `scores` / `elite(cell)` 接口。
+  - ✅ K=1 原回归测试继续通过。
+  - ✅ smoke: `qd/tests/test_archive_multicell.py`。
+- Blocker: 无（本地纯 Python）。
+- 下一步:
+  - Review 后可把该 archive 接入后续 QD loop smoke。

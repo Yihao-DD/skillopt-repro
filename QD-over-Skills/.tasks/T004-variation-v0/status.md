@@ -1,0 +1,12 @@
+# T004 状态
+- 状态: REVIEW
+- 最后更新: 2026-06-07 by Codex
+- 进度:
+  - ✅ `qd/variation.py` 实现 archive-conditioned prompt fragment。
+  - ✅ `VariationRequest` 校验 `N / min_novel / top_k / top_p`。
+  - ✅ `CandidateEdit` + `select_candidate_edits` 可在已有候选中强制 novelty quota（有可用 novel 候选时）。
+  - ✅ smoke: `qd/tests/test_variation_smoke.py`。
+- Blocker:
+  - 完整 T004 仍需接 SkillOpt optimizer API 调用；当前只覆盖零 API 的 prompt/sampling contract。
+- 下一步:
+  - Review 后决定是否在 `SkillOpt` optimizer/merge 外包一层真实 candidate generator。
