@@ -1,4 +1,5 @@
-"""S4/S8 — integrated loop: K=1 generation path + equal budget + K>1 routing.
+"""S4–S9 — integrated loop: K=1 generation path, equal budget, K>1 routing,
+behavior dedup, UCB parent-cell selection, cross-cell pickup, shared baseline.
 
 Zero API: the model/env is faked via :class:`~qd.loop.CandidateProducer`. Closes
 F3 (the K=1 decision path == ``evaluate_gate``, with a *programmatic* cosine edit
@@ -12,8 +13,9 @@ from dataclasses import dataclass, field
 from skillopt.evaluation.gate import evaluate_gate
 from skillopt.optimizer.scheduler import build_scheduler
 
+from qd.archive import Archive
 from qd.budget import EvalCounter
-from qd.loop import CandidateProducer, run_search
+from qd.loop import CandidateProducer, _select_parent_cell, run_search
 
 
 @dataclass
@@ -117,3 +119,45 @@ def test_k_gt_1_routes_distinct_behaviors_to_distinct_cells() -> None:
                      producer=_celled_producer(), baseline_cell=0)
     assert res.expensive_evals == 6
     assert res.n_occupied >= 2, res.archive.occupied_cells()
+
+
+def test_dedup_collapses_same_behavior_candidates() -> None:
+    # Many same-behavior proposals → dedup pays for fewer expensive evals than
+    # proposed, saving the expensive budget for distinct behaviors (S7).
+    res = run_search(k=16, baseline_skill="BASE", baseline_score=0.5, eval_budget=4,
+                     producer=_celled_producer())
+    assert res.expensive_evals == 4
+    assert res.n_proposed > res.expensive_evals
+
+
+def test_cross_cell_pickup_is_recorded() -> None:
+    # A candidate produced from the baseline cell that lands (and is accepted) in a
+    # different behavior cell is a cross-cell pickup (S9 metric).
+    res = run_search(k=16, baseline_skill="BASE", baseline_score=0.5, eval_budget=4,
+                     producer=_celled_producer())
+    assert res.cross_cell_pickups >= 1
+
+
+def test_parent_cell_selection_prefers_higher_gain_cell() -> None:
+    # With no exploration/novelty pressure (beta=gamma=0), UCB picks the cell whose
+    # elite score (predicted gain) is highest (S7 parent selection).
+    arch = Archive(k=16, baseline_skill="LOW", baseline_score=0.50, baseline_cell=0)
+    arch.update("HIGH", 0.95, step=1, cell=7)
+    assert _select_parent_cell(arch, {0: 5, 7: 5}, gamma=0.0, beta=0.0) == 7
+
+
+def test_both_arms_share_the_same_frozen_baseline() -> None:
+    # Same baseline injected into both arms; a below-baseline candidate is rejected,
+    # so the baseline elite remains identical across K=1 and K>1 (S9 shared-baseline).
+    base_sk, base_s = "FROZEN_BASE", 0.42
+    r1 = run_search(k=1, baseline_skill=base_sk, baseline_score=base_s, eval_budget=1,
+                    producer=FakeProducer(scores=[0.1]).as_producer())
+    worse = CandidateProducer(
+        propose=lambda s, *, step, target_cell=None: {"edits": [{"text": ".x"}]},
+        apply=lambda s, p: s + ".x",
+        score=lambda s: 0.1,
+        probe=lambda s: [{"code": "x = 1\n"}],
+    )
+    r4 = run_search(k=4, baseline_skill=base_sk, baseline_score=base_s, eval_budget=1, producer=worse)
+    assert r1.best_score == r4.best_score == base_s
+    assert r1.archive.best_skill == r4.archive.best_skill == base_sk

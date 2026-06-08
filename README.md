@@ -29,12 +29,12 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 | `qd/__init__.py` | 包说明 + 红线声明（纯 API/无 GPU；K=1=SkillOpt；格内严格 `>`；descriptor 只从轨迹 τ）。无代码导出。 | — | 完整 |
 | `qd/descriptor.py` | 行为描述子 b（Tier-A）：从轨迹的**生成代码**抽 φ∈[0,1]⁵ → μ → 手设投影 g → 2 轴（axis0=复杂度 `code_len+ctrl`、axis1=`op_density` `n_ops/lines`）→ 网格 cell。**只从代码、不从 skill 文字**。 | `code_features` `phi` `mu` `project` `cell_of` `descriptor` | 完整（S2/S3：axis1=op_density，ADR-0006） |
 | `qd/archive.py` | MAP-Elites 档案 + 选择算子 U：每格严格 `>` gate（平局拒）；K=1 归一到单格（逐步 == SkillOpt）；K>1 每格一个 elite、空格直收；全局最优单调。None-sentinel（空档案真空）+ 可种**任意 cell**。 | `Elite` `UpdateResult` `Archive`(`update`/`elite`/`occupied_cells`/`global_best`/`current_*`/`best_*`) | 完整（S1 修过） |
-| `qd/budget.py` | 昂贵评估的**去重 + 计数**：行为去重（按 cell+半径留最优 probe）；`EvalCounter`（cheap/expensive/cache-hit；hash 缓存，只在 miss 计昂贵）。 | `BehaviorCandidate` `behavior_distance` `deduplicate_by_behavior` `EvalCounter` | 完整（loop 用作共享 `EvalCounter`；`deduplicate_by_behavior` 待 S7 接） |
+| `qd/budget.py` | 昂贵评估的**去重 + 计数**：行为去重（按 cell+半径留最优 probe）；`EvalCounter`（cheap/expensive/cache-hit；hash 缓存，只在 miss 计昂贵）。 | `BehaviorCandidate` `behavior_distance` `deduplicate_by_behavior` `EvalCounter` | 完整（loop 用作共享 `EvalCounter` + `deduplicate_by_behavior` 行为去重） |
 | `qd/variation.py` | 瞄准着采的本地契约（T004 桩）：archive 条件化 prompt + 按 novelty 配额选候选（**identity 去重** + `strict_novelty` 标志）。**还没接 LLM/optimizer**。 | `VariationRequest` `CandidateEdit` `build_variation_prompt` `select_candidate_edits` | 桩（loop 经注入 `CandidateProducer`；真生成器 S7+ 接） |
-| `qd/scheduler.py` | 自适应调度（T007 桩）：`is_plateau` 检测（输入=best-so-far 单调序列）；plateau 触发增候选/novelty；UCB 选父格。 | `is_plateau` `PlateauScheduler` `ucb_cell_score` `choose_parent_cell` | 桩（loop 用 SkillOpt cosine；qd 的 UCB/plateau 待 S7 接） |
-| `qd/loop.py` | 集成循环：`produce_and_score_candidate`（注入 `CandidateProducer` → 零 API 可测）+ `run_search`（`eval_budget` 驱动两臂）；共享 baseline + 一个 `EvalCounter` + cosine；K=1==SkillOpt、K>1 按 descriptor 分格。 | `CandidateProducer` `produce_and_score_candidate` `run_search` `SearchResult` | S4 done（S7 dedup/UCB 父格 + 真 model adapter 待接） |
+| `qd/scheduler.py` | 自适应调度（T007 桩）：`is_plateau` 检测（输入=best-so-far 单调序列）；plateau 触发增候选/novelty；UCB 选父格。 | `is_plateau` `PlateauScheduler` `ucb_cell_score` `choose_parent_cell` | loop 用 SkillOpt cosine + `choose_parent_cell`(UCB) 选父格；`is_plateau` 调度待接 |
+| `qd/loop.py` | 集成循环：`produce_and_score_candidate`（注入 `CandidateProducer` → 零 API 可测）+ `run_search`（`eval_budget` 驱动两臂）；共享 baseline + 一个 `EvalCounter` + cosine；K=1==SkillOpt、K>1 按 descriptor 分格。 | `CandidateProducer` `produce_and_score_candidate` `run_search` `SearchResult` `ProposedCandidate` | S4–S9 done（dedup + UCB 父格 + cross-cell）；真 model adapter 待接 |
 
-### `qd/tests/` — 34 个测试（逐项见下方复现节）
+### `qd/tests/` — 38 个测试（逐项见下方复现节）
 | 文件 | 测什么 | 数 |
 |---|---|---|
 | `test_k1_reduces_to_skillopt.py` | **K=1 == SkillOpt**：同 `(skill,score)` 序列喂 `skillopt.evaluation.gate.evaluate_gate`(oracle) 与 `Archive(k=1)`，断言 action+状态逐步一致。 | 2 |
@@ -45,7 +45,7 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 | `test_budget_smoke.py` | 行为去重 + `EvalCounter` cheap/expensive/cache-hit 计数。 | 2 |
 | `test_variation_smoke.py` | prompt 契约；选择（novelty 配额、**identity 去重、strict raise**，后 2 个 S1 新增）。 | 4 |
 | `test_scheduler_smoke.py` | plateau 检测需满窗、plateau 调度、UCB 选父格。 | 3 |
-| `test_loop_generation_path.py` | K=1 决策逐步 == `evaluate_gate`（F3）；cosine 程序化；真 `rank_and_select` no-op；等预算两臂相等；K>1 路由 `n_occupied≥2`。 | 5 |
+| `test_loop_generation_path.py` | K=1 决策逐步 == `evaluate_gate`（F3）；cosine 程序化；真 `rank_and_select` no-op；等预算两臂相等；K>1 路由 `n_occupied≥2`；**dedup 省评估 / cross-cell pickup / UCB 父格 / shared-baseline**（S7/S9）。 | 9 |
 
 ### `tools/` — 数据物化（我方一次性 build，公司不跑）
 | 文件 | 干什么 |
@@ -82,7 +82,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pytest qd/tests -v
 ```
 
-**预期：`34 passed`，下列 34 项逐一 `PASSED`**（我方 2026-06-08 实测 `34 passed`）：
+**预期：`38 passed`，下列 38 项逐一 `PASSED`**（我方 2026-06-08 实测 `38 passed`）：
 ```
 test_archive_multicell.py:  test_multicell_accepts_empty_cell_and_rejects_ties
                             test_multicell_per_cell_gate_and_global_best_are_monotone
@@ -116,6 +116,10 @@ test_loop_generation_path.py: test_edit_budget_follows_cosine_schedule_programma
                             test_real_rank_and_select_unchanged_when_pool_within_budget
                             test_equal_expensive_eval_budget_across_arms
                             test_k_gt_1_routes_distinct_behaviors_to_distinct_cells
+                            test_dedup_collapses_same_behavior_candidates
+                            test_cross_cell_pickup_is_recorded
+                            test_parent_cell_selection_prefers_higher_gain_cell
+                            test_both_arms_share_the_same_frozen_baseline
 ```
 
 > `test_k1_*`（C0 红线）+ `test_loop_generation_path.py` 的 K=1 决策路径始终 == `evaluate_gate`。

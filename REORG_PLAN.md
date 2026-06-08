@@ -5,8 +5,8 @@
 
 ## 🔖 RESUME HERE（当前状态，2026-06-08）
 - 分支: `reorg/2026-06-08`（== `master`）。**已 merge master + 推 origin（`82077db`，纯净）**；`archive/pre-reorg-2026-06-08` tag 已推（删掉的 audit/工作记录/旧产物可 `git checkout <tag> -- <file>` 恢复）。
-- 已完成: **S0 / F0 / S1 / S2 / S3 / S4 / S5 / S6 / S8 / S12**（S7/S9 部分；`qd/tests` = **34 passed**）。⚠️ descriptor 根因 P1 已修；**loop 已建**（P4 等预算 / P5 shared-baseline / F3 生成路径 = 测试已验）；但**真正的 `n_occupied>1` 要在 REAL DeepSeek 数据上验**（预检门 S16 + 100 题），预检门未建。
-- **下一步 = S7 收尾 + S9**: 给 K>1 接 `deduplicate_by_behavior` + UCB `choose_parent_cell`（当前父 = global best）；补 cross-cell pickup 指标 + shared-baseline 断言。然后 S10（root `pyproject.toml`）/ S11（fork openai-compat 提交 + patch 已删）/ S13（vendor `SkillOpt/`）/ S14（benchmark tarball）/ S15-16（configs/frozen + 预检门）。
+- 已完成: **S0–S9 + S12**（`qd/tests` = **38 passed**）。⚠️ descriptor 根因 P1 已修；**loop 全建**（P4 等预算 / P5 shared-baseline / F3 / dedup / UCB 父格 / cross-cell = 测试已验，零 API）；但**真正的 `n_occupied>1` 要在 REAL DeepSeek 数据上验** —— 需真实 model adapter + 预检门（S15/S16），均未建。
+- **下一步 = S10–S14（打包/收编）**: S10 root `pyproject.toml`(path dep) → S11 fork openai-compat 提交进 fork + 记 SHA(patch 已删) → S13 vendor `SkillOpt/`→`vendor/SkillOpt/` → S14 benchmark tarball。再 S15（`configs/frozen` + `scripts/`：**真实 SkillOpt model adapter** + run_experiment）→ **S16 预检门**（最后）。真实 DeepSeek 验证在 S15-16 之后。
 - 研究任务看板（T0XX）见 `QD-over-Skills/.tasks/INDEX.md`，reorg 完成后恢复。决策/硬伤已锁定，见下两节。
 
 ## 已锁定的决策（"按你建议来"）
@@ -34,9 +34,9 @@
 - [x] **S4** `qd/loop.py`: `produce_and_score_candidate`(propose→`rank_and_select`(lazy clip)→apply→descriptor cell→`EvalCounter` 计数) + `run_search`(eval_budget 驱动)。model 用 `CandidateProducer` 注入 → 零 API 可测。
 - [x] **S5** baseline 一次注入两臂（`Archive(baseline_skill/score/cell)`；K=1 归一单格、K>1 种 baseline_cell）。
 - [x] **S6** 一个共享 `EvalCounter`（cache by skill-hash = 去重）+ cosine；`SearchResult` 暴露 `expensive_evals/n_occupied/edit_budgets`；等预算由 eval_budget 强制（测试验证两臂相等）。
-- [~] **S7** K>1 路: probe traj→`descriptor.cell`→`Archive.update` **已通**（测试 n_occupied≥2）。**TODO**: 接 `deduplicate_by_behavior` + `choose_parent_cell`(UCB) 选父格（当前父 = global best）。
+- [x] **S7** K>1 路: probe→`descriptor.cell`→`Archive.update`；接 `deduplicate_by_behavior`（行为去重省昂贵预算）+ UCB `choose_parent_cell`（父格按 elite-gain + 探索选，`_select_parent_cell`）；记 cross-cell pickup。
 - [x] **S8** `test_loop_generation_path.py`：K=1 决策**逐步等价 `evaluate_gate`** + cosine 程序化导出 + 真 `rank_and_select` no-op 分支 → **闭 F3**。
-- [~] **S9** loop 集成测试: 等预算两臂相等 + K>1 cell 路由**已测**。**TODO**: cross-cell pickup 指标 + 显式 shared-baseline 断言。
+- [x] **S9** loop 集成测试: 等预算两臂相等 + K>1 路由 + **dedup 省评估** + **cross-cell pickup** + **shared-baseline 两臂一致**（共 9 个 loop 测试）。
 - [ ] **S10** root `pyproject.toml`（path dep `vendor/SkillOpt`）。conftest 已先行。
 - [ ] **S11** 提交 fork openai-compat 修复为 fork commit + **删 patch** + 加 `origin=Yihao-DD/SkillOpt` + 记 SHA。
 - [ ] **S13** un-gitignore + 搬 `SkillOpt/`→`vendor/SkillOpt/`（plain，先记 fork SHA 再处理 `.git`）；reinstall editable；`handoff/RELEASES.md`。
