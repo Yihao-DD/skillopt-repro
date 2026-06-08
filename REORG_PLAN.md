@@ -37,8 +37,8 @@
 - [x] **S7** K>1 路: probe→`descriptor.cell`→`Archive.update`；接 `deduplicate_by_behavior`（行为去重省昂贵预算）+ UCB `choose_parent_cell`（父格按 elite-gain + 探索选，`_select_parent_cell`）；记 cross-cell pickup。
 - [x] **S8** `test_loop_generation_path.py`：K=1 决策**逐步等价 `evaluate_gate`** + cosine 程序化导出 + 真 `rank_and_select` no-op 分支 → **闭 F3**。
 - [x] **S9** loop 集成测试: 等预算两臂相等 + K>1 路由 + **dedup 省评估** + **cross-cell pickup** + **shared-baseline 两臂一致**（共 9 个 loop 测试）。
-- [ ] **S10** root `pyproject.toml`（path dep `vendor/SkillOpt`）。conftest 已先行。
-- [ ] **S11** 提交 fork openai-compat 修复为 fork commit + **删 patch** + 加 `origin=Yihao-DD/SkillOpt` + 记 SHA。
+- [x] **S10** root `pyproject.toml`（qd 包 + pytest `testpaths` + dev deps；fork 仍经 `-e ./SkillOpt` 装，conftest 解析 import）。bare `pytest` → 39 passed。
+- [x] **S11** fork openai-compat 修复已提交为 fork commit **`05a023c`**（base upstream `ee9931e`）+ 加 origin remote（未推）+ patch 早已删。SHA 记于 `handoff/RELEASES.md`。
 - [ ] **S13** un-gitignore + 搬 `SkillOpt/`→`vendor/SkillOpt/`（plain，先记 fork SHA 再处理 `.git`）；reinstall editable；`handoff/RELEASES.md`。
 - [ ] **S14** materialize 一次 + 提交 15MB tarball + items.json + `SOURCE.md`（sha256）到 `data/benchmarks/`；gitignore 解压目录。
 - [x] **S12**（改为**删除**，user 2026-06-08，非 `_sealed_`）：删 audit/工作记录/旧 baseline/`docs`/`results`/`patches` + tag `archive/pre-reorg-2026-06-08`（已推 origin，可恢复）。**已 merge master + 推**（`82077db`）。注：master 现为「重组进行中」诚实态，S18 仍是完成里程碑。
