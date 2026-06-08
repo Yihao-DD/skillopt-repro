@@ -224,7 +224,9 @@ def run_search(
     cell_visits: dict[int, int] = {}
 
     step = 0
-    while counter.expensive_evals < eval_budget:
+    stalls = 0
+    max_steps = eval_budget * 4 + 16  # hard cap: avoid an infinite loop if the producer can't make new candidates
+    while counter.expensive_evals < eval_budget and step < max_steps:
         before = counter.expensive_evals
         step += 1
         edit_budget = scheduler.step()
@@ -263,6 +265,12 @@ def run_search(
                 if upd.action == "accept" and pc.cell != pc.parent_cell:
                     result.cross_cell_pickups += 1
 
+        # Spend the FULL equal budget: tolerate unproductive (all-cache-hit) steps
+        # by resampling; give up only after several consecutive stalls.
         if counter.expensive_evals == before:
-            break  # no new expensive evals this step (all cache hits) — avoid an infinite loop
+            stalls += 1
+            if stalls >= 8:
+                break
+        else:
+            stalls = 0
     return result
