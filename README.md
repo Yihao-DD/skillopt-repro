@@ -14,10 +14,10 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 5. **`REORG_PLAN.md` — ⚠️ 当前活的执行清单（先看其 `RESUME HERE`）。**
 
 ## 当前状态（2026-06-08，分支 `reorg/2026-06-08`）
-封存+重组中（审计 `审计报告-公司工作记录.md` 14 类失败模式后的响应 = 5 ADR + `PROCESS.md`）。
+封存+重组中（审计 14 类失败模式后的响应 = 5 ADR + `PROCESS.md`；审计结论已并入 `QD-over-Skills/decisions/ADR-0003`，原始审计 + 公司记录已删除、可从 `archive/pre-reorg-2026-06-08` tag 取回）。
 - **已完成**：S0（分支+F1）、F0（conftest + plan）、**S1（6 bug 修复，`qd/tests` 29 passed）**。
 - **未完成（诚实）**：`qd/loop.py` **还没建**（S4）→ **现在还不能真正跑一次 QD 搜索**；descriptor axis1 待重建（S2，当前会塌成 1 格）；`scripts/`/预检门/数据自带（S14-16）未做。
-- **下一步 = S2**（重建 descriptor，见 `REORG_PLAN.md`）。旧 Phase-1（SearchQA+GPT-5.5）脚手架已被取代，将封进 `_sealed_2026-06-08/`。
+- **下一步 = S2**（重建 descriptor，见 `REORG_PLAN.md`）。旧 Phase-1 脚手架与无 provenance 的旧产物（`docs/superpowers/`、`results/`、旧 baseline 报告、审计/工作记录）**已删除**，可从 `archive/pre-reorg-2026-06-08` tag 取回。
 
 ---
 
@@ -123,7 +123,6 @@ skillopt-repro/
 ├── QD-over-Skills/      # SPEC + 文件系统 PM（.tasks SSOT / decisions ADR-0001..0005 / BRIEF / OPEN_DECISIONS）
 ├── handoff/            # 出站交付（RUNBOOK + RUN_REQUEST/FEEDBACK 模板）
 ├── tools/              # 数据物化脚本
-├── SkillOpt/           # 上游 fork（ee9931e；待 vendor 进 vendor/SkillOpt/，ADR-0004）
-├── patches/            # deepseek-backend-adapter.patch（已并入 fork 工作树，S11 删）
-└── 审计报告-公司工作记录.md / 工作记录-完整版.md           # 审计 + 公司记录（将封进 _sealed_）
+└── SkillOpt/           # 上游 fork（ee9931e；待 vendor 进 vendor/SkillOpt/，ADR-0004）
 ```
+> 旧错误/无 provenance 文档（Phase-1 报告、`docs/superpowers/`、`results/`、审计、工作记录、冗余 patch）已删除，全部可从 `archive/pre-reorg-2026-06-08` tag 恢复。
