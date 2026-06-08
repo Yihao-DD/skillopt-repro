@@ -4,8 +4,8 @@
 > 计划来源: 2 轮 grounding+critique workflow（逐条核对源码）。本文件是跨 session 的恢复锚点。
 
 ## 🔖 RESUME HERE（当前状态，2026-06-08）
-- 分支: `reorg/2026-06-08`。检查点已 commit: `conftest.py` + S1 修复 + 本 plan + 新根 `README.md`。
-- 已完成: **S0 / F0 / S1**（`qd/tests` = **29 passed**）。
+- 分支: `reorg/2026-06-08`（== `master`）。**已 merge master + 推 origin（`82077db`，纯净）**；`archive/pre-reorg-2026-06-08` tag 已推（删掉的 audit/工作记录/旧产物可 `git checkout <tag> -- <file>` 恢复）。
+- 已完成: **S0 / F0 / S1 / S12**（`qd/tests` = **29 passed**）。⚠️ 代码层面只修了 S1 的 6 个小 bug；审计根因（descriptor 塌缩 P1）+ loop（P4/P5/F3）+ 预检门 **均未做**。
 - **下一步 = S2**: 读 `qd/tests/test_descriptor_v0.py` + `test_descriptor_validation.py` → 重建 `qd/descriptor.py` axis1 = graded `op_density`（`phi[3]`→ops/line；`project` axis0=size+control、axis1=op_density；`uses_pandas` 留 φ 不用）→ 写 `ADR-0006` supersede `ADR-0002` → 更新 axis1 相关断言(含 `test_strategy_axis_tracks_pandas_usage`) + 加 graded-非退化测试 → `pytest` 绿。之后 **S4** 建 `qd/loop.py`。
 - 研究任务看板（T0XX）见 `QD-over-Skills/.tasks/INDEX.md`，reorg 完成后恢复。决策/硬伤已锁定，见下两节。
 
@@ -41,7 +41,7 @@
 - [ ] **S11** 提交 fork openai-compat 修复为 fork commit + **删 patch** + 加 `origin=Yihao-DD/SkillOpt` + 记 SHA。
 - [ ] **S13** un-gitignore + 搬 `SkillOpt/`→`vendor/SkillOpt/`（plain，先记 fork SHA 再处理 `.git`）；reinstall editable；`handoff/RELEASES.md`。
 - [ ] **S14** materialize 一次 + 提交 15MB tarball + items.json + `SOURCE.md`（sha256）到 `data/benchmarks/`；gitignore 解压目录。
-- [ ] **S12** 封存 legacy → `_sealed_2026-06-08/` + tag `archive/pre-reorg-2026-06-08`；旧 headline 标 ARCHIVED（**在 S13 之后**）。
+- [x] **S12**（改为**删除**，user 2026-06-08，非 `_sealed_`）：删 audit/工作记录/旧 baseline/`docs`/`results`/`patches` + tag `archive/pre-reorg-2026-06-08`（已推 origin，可恢复）。**已 merge master + 推**（`82077db`）。注：master 现为「重组进行中」诚实态，S18 仍是完成里程碑。
 - [ ] **S15** 铺 `configs/frozen/<model>@<date>.yaml`(temp=0+seed-to-model) / `runs/index.csv` / `scripts/`(stamp/run/ingest/make_handoff/redline_lint，真实可测)。
 - [ ] **S16** **最后** `scripts/preflight_gate.py`（fail-closed，binds 真符号；缺符号=FAIL）。
 - [ ] **S17** 门自测 `scripts/tests/test_preflight_gate.py`（坏 fixture 必拒）+ redline_lint 自测。
