@@ -12,3 +12,6 @@ __pycache__/
 # 运行产物（如果挪到工作区）
 outputs/
 runs/
+
+# air-gap 发包产物（scripts/make_bundle.py 输出）
+dist/

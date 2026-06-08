@@ -12,12 +12,13 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 3. `QD-over-Skills/BRIEF.md` + `方案与数学推导.md`（SPEC）。
 4. `QD-over-Skills/.tasks/INDEX.md` — 研究任务看板（SSOT）。
 5. **`REORG_PLAN.md` — ⚠️ 当前活的执行清单（先看其 `RESUME HERE`）。**
+6. **`LOCAL_ONLY.md` — 公司侧怎么从零跑起来（GitHub 缺件 + air-gap zip + 换 API=改 `.env` + 一键全量）。**
 
 ## 当前状态（2026-06-08，分支 `reorg/2026-06-08` == `master`）
 封存+重组（审计 14 类失败模式后的响应 = 5 ADR + `PROCESS.md`；审计结论并入 `ADR-0003`，原始审计/记录已删除、可从 `archive/pre-reorg-2026-06-08` tag 取回）。
 - **已完成 S0–S12 + 描述子真实数据标定 + S15 真实 adapter**：loop 全建（K=1==SkillOpt / K>1 descriptor 分格 / dedup / UCB 父格 / 等预算 stall-tolerant）；descriptor 标定到真实 558 条占 **16/16 格**（ADR-0006）；`qd/adapter_skillopt.py` 把 loop 接到真 SkillOpt+DeepSeek。**`qd/tests` = 39 passed（零 API）。**
 - **🎯 真实验证已跑（DeepSeek，~$0.7，`tools/run_qd_validation.py`）—— 诚实负结果**：N=20、等预算 `eval_budget=12`，**贪心 K=1 best=0.65 赢 QD K=4 best=0.50**（K=4 探索 n_occupied=2 但薄、且多花 budget）。**[Q1] QD 探索 ✅；[Q2] QD payoff ❌**。详见下「🎯 验证结果」。
-- **收口**：QD payoff 未获验证（小样本反对）。**定论需全量测试**（更大 N + 更长 budget + 接「瞄准着采」厚探索 —— 当前 `adapter.propose` 只是单纯 reflect，QD 未在最强形态下测过）。`scripts/` 预检门（S16）+ vendor/benchmark 打包（S13/S14）仍待做。
+- **收口**：QD payoff 未获验证（小样本反对）。**定论需全量测试**（更大 N + 更长 budget + 接「瞄准着采」厚探索 —— 当前 `adapter.propose` 只是单纯 reflect，QD 未在最强形态下测过）。`scripts/run_experiment.py`（一键全量：`--full`/`--preflight`/`--dry-run`）+ `scripts/make_bundle.py`（air-gap 发包）+ `LOCAL_ONLY.md` **已补齐**（换 API=改 `.env`、全量=一条命令）；S16 更重校验（verify_checkout/run_provenance）+ vendor/benchmark 打包（S13/S14）仍待做。
 - 旧无 provenance 产物（`docs/superpowers/`、`results/`、旧 baseline 报告、审计/工作记录）**已删除**，可从 `archive/pre-reorg-2026-06-08` tag 取回。
 
 ---
@@ -59,6 +60,13 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 | `tools/run_qd_validation.py` | **真实 K=1 vs K>1 验证**（SpreadsheetBench+DeepSeek，frozen target temp=0 / optimizer temp=0.8，等预算）：打印 n_occupied / best / verdict + token。env 调 `N_SELECT/EVAL_BUDGET/K_BIG`。读 `.env`、写 `runs/`。 |
 | `tools/materialize_searchqa.py` | 从 HF 物化 SearchQA split（Phase-1 遗留）。 |
 | `tools/test_materialize_searchqa.py` | `materialize_searchqa` 的单测。 |
+
+### `scripts/` — 公司一键全量入口（本次补齐启动面 S16）
+| 文件 | 干什么 |
+|---|---|
+| `scripts/run_experiment.py` | **一键启动**：`--full`（test 全集 N=280，K=1 贪心 vs K=4 QD，等预算 12/臂）/ `--preflight`（2 题冒烟）/ `--dry-run`（零费用自检 fork+数据+key）。读 `.env` 换 API、设冻结 target（temp=0/seed=42）、写 `runs/<mode>/summary.json`（含 verdict、不含 key）。跑的是 `run_qd_validation` 同款核心，参数化成 CLI。 |
+| `scripts/make_bundle.py` | **我方发包**：把仓库 + gitignored 的 `SkillOpt/` fork + SpreadsheetBench 数据 + `.env.example` 打成自包含 air-gap zip（排除 `.env`/`.git`/`outputs`/非 SSB 数据）+ sha256。`--dry-run` 看清单体积。 |
+| `scripts/__init__.py` | 让 `scripts` 可被零 API 测试 import（`resolve_plan`/`_included`，见 `qd/tests/test_company_launch.py`）。 |
 
 ### 根目录
 | 文件 | 干什么 |
@@ -156,6 +164,8 @@ skillopt-repro/
 ├── handoff/            # 出站交付（RUNBOOK / RUN_REQUEST / FEEDBACK / RELEASES）
 ├── tools/              # 数据物化 + 可行性/标定/验证脚本
 ├── configs/frozen/     # 冻结目标 provenance（temp/seed，红线 P2）
+├── scripts/            # 公司一键全量入口 run_experiment + 发包 make_bundle（本次补齐）
+├── LOCAL_ONLY.md       # GitHub 缺件 + air-gap 交付 + 换API/全量步骤（公司冷启动读这个）
 ├── runs/               # rollout 产物（gitignored）
 └── SkillOpt/           # 上游 fork（ee9931e + adapter commits；待 vendor 进 vendor/SkillOpt/，ADR-0004）
 ```

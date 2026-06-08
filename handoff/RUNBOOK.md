@@ -2,7 +2,7 @@
 
 > ⚠️ **你不会改任何代码。** 需要改 → 写进 `FEEDBACK.md` 的 `proposed_changes`，我们来改、重打 tag、再发给你。本地改代码会被结构性拒收，且毁掉结果可信度。
 >
-> 📦 **数据已随仓库自带**（`data/benchmarks/`）——**无需下载、无需联网、无需物化**；`run_experiment.py` 启动会自动解压到本地。
+> 📦 **数据已随 zip 自带**（`SkillOpt/data/spreadsheetbench_*`）——**无需下载、无需联网、无需物化**。GitHub clone 缺哪些件、怎么补，见 `LOCAL_ONLY.md`。
 >
 > 🏷️ **如果你用 agent（Codex/Claude）操作**：每句 prompt 前加 `在公司，`，它就会进 runs-only 模式（只跑不改）。详见 `PROCESS.md §9`。
 
@@ -18,26 +18,32 @@
   TARGET_MODEL=<RUN_REQUEST 里的 model_snapshot>
   ```
 
-## 1. 取码（只读，单向）
+## 1. 取码（从 GitHub Releases 下载自包含 zip）
 ```bash
-# 方式 A：能连 GitHub
-git clone --recurse-submodules <repo>
-git checkout <code_tag>        # 例 run/redo-headline/v1
-# 方式 B：air-gapped → 解压我方发来的 release zip
+# 从仓库 Releases 页下载我方上传的 release 资产（含 fork 引擎 + SpreadsheetBench 数据 + .env.example）
+gh release download <tag> -p '*.zip'        # 或网页点下载
+unzip skillopt-fullrun-<sha>.zip && cd skillopt-fullrun-<sha>
+# 核对：本地算 zip 的 sha256，必须 == release notes 里贴的值
 ```
+> ⚠️ **别用 `git clone`**——引擎/数据被 gitignore 排除，clone 跑不起来（见 `LOCAL_ONLY.md`）。下载 release zip。
 
-## 2. step 0：核对（不符就停，别跑）
+## 2. step 0：装环境 + 自检（不 READY 就停，别跑）
 ```bash
-python scripts/verify_checkout.py     # 比对本地 SHA / 树哈希 == MANIFEST.txt
+python -m venv .venv && .venv\Scripts\python.exe -m pip install -U pip
+.venv\Scripts\python.exe -m pip install -e ./SkillOpt -r requirements-extra.txt
+copy .env.example .env        # 填 endpoint/key/model —— 换 API 的唯一入口（LOCAL_ONLY.md §2）
+.venv\Scripts\python.exe scripts\run_experiment.py --full --dry-run
 ```
-- `vendor/SkillOpt` 必须**非空**且 HEAD == MANIFEST 的 submodule_sha。空或不符 → **停手**，回我方。
+- 自检最后一行必须是 `DRY-RUN: READY ...`（fork/数据/key 全在）。出现 `FAIL` → **停手**，回我方。
 
 ## 3. 跑全量（一条命令）
 ```bash
-python scripts/run_experiment.py --config configs/spreadsheetbench/full280.yaml --full
+.venv\Scripts\python.exe scripts\run_experiment.py --preflight   # 先 2 题冒烟，确认调通你的 API
+.venv\Scripts\python.exe scripts\run_experiment.py --full        # 全量 N=280，K=1 贪心 vs K=4 QD，等预算
 ```
-- harness 会自动：断言 clean-tree + 算整树哈希 + 校验 target temp=0/seed + 两臂共享昂贵评估计数器 + 实时写 `run_provenance.json`。任一不满足它**自己拒绝启动**——这是在保护你，不是刁难。
-- 想先小试：`--config configs/spreadsheetbench/preflight100.yaml --subset 100`。
+- launcher 自动：冻结 target（temp=0+seed=42）/ optimizer temp=0.8 + 两臂共享同一 baseline 与等昂贵预算（`eval_budget=12`/臂）+ 写 `runs/full/summary.json`（含 verdict、**不含 key**）。
+- 规模/预算旋钮（`--n` / `--eval-budget` / `--k`）见 `LOCAL_ONLY.md §5`。
+- 尚未做（S16 加固）：clean-tree 断言 / 整树哈希 / `run_provenance.json`。当前完整性保证 = zip 的 sha256。
 
 ## 4. 运维纪律（避免上次的坑）
 - **按 PID 杀**：用打印出来的 stop 脚本 / `kill <PID>`，**绝不** `pkill run_experiment.py`（会误杀别的 run）。
@@ -48,13 +54,14 @@ python scripts/run_experiment.py --config configs/spreadsheetbench/full280.yaml 
 - **不要改代码。** 置 `status=code_defect`，把报错 + 日志 + 描述式 diff 写进 `FEEDBACK.md §4`，停手发回。
 
 ## 6. 打包回传（唯一回传方式）
-```bash
-python scripts/make_bundle.py         # 把 returned/ 打成 zip + 算 sha256
+```powershell
+Compress-Archive runs\full dist\returned-<run_id>.zip       # 打包本次产物
+Get-FileHash dist\returned-<run_id>.zip -Algorithm SHA256   # 算 sha256
 ```
-- 把 `returned/<run_id>.zip` **人手**发我方（邮件/IM/文件分享），**并把 sha256 粘进发件正文**（我方据此验完整性）。
-- 你**永不** push、永不 commit。
+- 把 `dist/returned-<run_id>.zip` **人手**发我方，**并把 sha256 粘进发件正文**（我方据此验完整性）。
+- 你**永不** push、永不 commit。（`scripts/make_bundle.py` 是**我方**发包工具，不是你的回传工具。）
 
 ## 7. 常见问题
 - 代理报 400（`max_completion_tokens`/`reasoning_effort`）→ 已在代码里修好（openai-compat 适配），不用动；若仍报，记进 FEEDBACK。
-- `run_experiment.py` 说「dirty tree, refusing」→ 你动到了被追踪文件。**重新解压一份干净的**再跑，别去 `git checkout --` 硬抹（那会掩盖问题）。
+- `import skillopt` 失败 / `--dry-run` 报 fork 或数据缺失 → 没 `pip install -e ./SkillOpt`，或 zip 解压不完整。重装/重解压，别手改 `sys.path`。
 - 跑很久/很贵 → 它到 `expensive_eval_budget_per_arm` 会自己停（`status=budget_exceeded`）；预算在 `RUN_REQUEST` 里，疑问回我方。
