@@ -27,24 +27,25 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 | 文件 | 干什么 | 关键符号 | 状态 |
 |---|---|---|---|
 | `qd/__init__.py` | 包说明 + 红线声明（纯 API/无 GPU；K=1=SkillOpt；格内严格 `>`；descriptor 只从轨迹 τ）。无代码导出。 | — | 完整 |
-| `qd/descriptor.py` | 行为描述子 b（Tier-A v0）：从轨迹的**生成代码**抽 φ∈[0,1]⁵（`code_len/uses_pandas/ctrl/op/iter`）→ probe 均值 μ → 手设投影 g → 2 轴 → 网格 cell。**只从代码、不从 skill 文字**。 | `code_features` `phi` `mu` `project` `cell_of` `descriptor` | ⚠️ axis1 饱和，S2 重建为 `op_density` |
+| `qd/descriptor.py` | 行为描述子 b（Tier-A）：从轨迹的**生成代码**抽 φ∈[0,1]⁵ → μ → 手设投影 g → 2 轴（axis0=复杂度 `code_len+ctrl`、axis1=`op_density` `n_ops/lines`）→ 网格 cell。**只从代码、不从 skill 文字**。 | `code_features` `phi` `mu` `project` `cell_of` `descriptor` | 完整（S2/S3：axis1=op_density，ADR-0006） |
 | `qd/archive.py` | MAP-Elites 档案 + 选择算子 U：每格严格 `>` gate（平局拒）；K=1 归一到单格（逐步 == SkillOpt）；K>1 每格一个 elite、空格直收；全局最优单调。None-sentinel（空档案真空）+ 可种**任意 cell**。 | `Elite` `UpdateResult` `Archive`(`update`/`elite`/`occupied_cells`/`global_best`/`current_*`/`best_*`) | 完整（S1 修过） |
-| `qd/budget.py` | 昂贵评估的**去重 + 计数**：行为去重（按 cell+半径留最优 probe）；`EvalCounter`（cheap/expensive/cache-hit；hash 缓存，只在 miss 计昂贵）。 | `BehaviorCandidate` `behavior_distance` `deduplicate_by_behavior` `EvalCounter` | 完整（未被 loop 实例化，S6 接） |
-| `qd/variation.py` | 瞄准着采的本地契约（T004 桩）：archive 条件化 prompt + 按 novelty 配额选候选（**identity 去重** + `strict_novelty` 标志）。**还没接 LLM/optimizer**。 | `VariationRequest` `CandidateEdit` `build_variation_prompt` `select_candidate_edits` | 桩（S4 接真生成） |
-| `qd/scheduler.py` | 自适应调度（T007 桩）：`is_plateau` 检测（输入=best-so-far 单调序列）；plateau 触发增候选/novelty；UCB 选父格。 | `is_plateau` `PlateauScheduler` `ucb_cell_score` `choose_parent_cell` | 桩（未被 loop 调用，S6/S7 接） |
-| `qd/loop.py` | **（待建 S4–S7）** 集成循环：两臂（K=1 vanilla + K>1 QD）共享 baseline + **一个** EvalCounter + **一个** cosine 调度；复用 SkillOpt 的 rollout→reflect→`rank_and_select`→gate。 | — | **不存在** |
+| `qd/budget.py` | 昂贵评估的**去重 + 计数**：行为去重（按 cell+半径留最优 probe）；`EvalCounter`（cheap/expensive/cache-hit；hash 缓存，只在 miss 计昂贵）。 | `BehaviorCandidate` `behavior_distance` `deduplicate_by_behavior` `EvalCounter` | 完整（loop 用作共享 `EvalCounter`；`deduplicate_by_behavior` 待 S7 接） |
+| `qd/variation.py` | 瞄准着采的本地契约（T004 桩）：archive 条件化 prompt + 按 novelty 配额选候选（**identity 去重** + `strict_novelty` 标志）。**还没接 LLM/optimizer**。 | `VariationRequest` `CandidateEdit` `build_variation_prompt` `select_candidate_edits` | 桩（loop 经注入 `CandidateProducer`；真生成器 S7+ 接） |
+| `qd/scheduler.py` | 自适应调度（T007 桩）：`is_plateau` 检测（输入=best-so-far 单调序列）；plateau 触发增候选/novelty；UCB 选父格。 | `is_plateau` `PlateauScheduler` `ucb_cell_score` `choose_parent_cell` | 桩（loop 用 SkillOpt cosine；qd 的 UCB/plateau 待 S7 接） |
+| `qd/loop.py` | 集成循环：`produce_and_score_candidate`（注入 `CandidateProducer` → 零 API 可测）+ `run_search`（`eval_budget` 驱动两臂）；共享 baseline + 一个 `EvalCounter` + cosine；K=1==SkillOpt、K>1 按 descriptor 分格。 | `CandidateProducer` `produce_and_score_candidate` `run_search` `SearchResult` | S4 done（S7 dedup/UCB 父格 + 真 model adapter 待接） |
 
-### `qd/tests/` — 29 个测试（逐项见下方复现节）
+### `qd/tests/` — 34 个测试（逐项见下方复现节）
 | 文件 | 测什么 | 数 |
 |---|---|---|
 | `test_k1_reduces_to_skillopt.py` | **K=1 == SkillOpt**：同 `(skill,score)` 序列喂 `skillopt.evaluation.gate.evaluate_gate`(oracle) 与 `Archive(k=1)`，断言 action+状态逐步一致。 | 2 |
 | `test_k1_characterization.py` | slow-update 保护区 step-edit 跳过；真实 SpreadsheetBench history 8 步 replay。 | 3 |
-| `test_descriptor_v0.py` | φ 有界/确定、`code_features` 解析、probe 重采稳定(sd<0.08)、cell 确定、best/init 分离。**⚠️ 含 S2 要改的 axis1 断言。** | 8 |
+| `test_descriptor_v0.py` | φ 有界/确定、`code_features` 解析、probe 重采稳定(sd<0.08)、cell 确定、**两轴 graded 非退化 + op_density 轴**（S2/S3）。 | 8 |
 | `test_descriptor_validation.py` | 红线：忽略 skill 文字（同轨迹→同 b）、按行为分（pandas vs openpyxl→不同 b）。 | 2 |
 | `test_archive_multicell.py` | K>1：空格收、平局拒、格内独立、全局最优单调、**空档案真空、种任意 cell**（后 2 个 S1 新增）。 | 5 |
 | `test_budget_smoke.py` | 行为去重 + `EvalCounter` cheap/expensive/cache-hit 计数。 | 2 |
 | `test_variation_smoke.py` | prompt 契约；选择（novelty 配额、**identity 去重、strict raise**，后 2 个 S1 新增）。 | 4 |
 | `test_scheduler_smoke.py` | plateau 检测需满窗、plateau 调度、UCB 选父格。 | 3 |
+| `test_loop_generation_path.py` | K=1 决策逐步 == `evaluate_gate`（F3）；cosine 程序化；真 `rank_and_select` no-op；等预算两臂相等；K>1 路由 `n_occupied≥2`。 | 5 |
 
 ### `tools/` — 数据物化（我方一次性 build，公司不跑）
 | 文件 | 干什么 |
@@ -81,7 +82,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pytest qd/tests -v
 ```
 
-**预期：`29 passed`，下列 29 项逐一 `PASSED`**（我方 2026-06-08 实测 `29 passed in 1.13s`）：
+**预期：`34 passed`，下列 34 项逐一 `PASSED`**（我方 2026-06-08 实测 `34 passed`）：
 ```
 test_archive_multicell.py:  test_multicell_accepts_empty_cell_and_rejects_ties
                             test_multicell_per_cell_gate_and_global_best_are_monotone
@@ -94,8 +95,8 @@ test_descriptor_v0.py:      test_phi_bounded_and_sized / test_phi_deterministic
                             test_code_features_parsing / test_phi_accepts_raw_code
                             test_descriptor_stable_under_probe_resampling
                             test_cell_deterministic_and_in_range
-                            test_descriptor_separates_best_from_initial
-                            test_strategy_axis_tracks_pandas_usage
+                            test_descriptor_axes_are_graded_not_degenerate
+                            test_strategy_axis_tracks_op_density
 test_descriptor_validation.py: test_descriptor_ignores_skill_text_when_trajectory_behavior_matches
                             test_descriptor_separates_same_prompt_with_different_behavior
 test_k1_characterization.py: test_step_edit_into_protected_region_is_skipped
@@ -110,10 +111,15 @@ test_variation_smoke.py:    test_variation_prompt_includes_archive_and_novelty_c
                             test_select_candidate_edits_honors_novelty_quota_when_available
                             test_select_keeps_distinct_value_equal_candidates
                             test_strict_novelty_raises_when_quota_unmet
+test_loop_generation_path.py: test_edit_budget_follows_cosine_schedule_programmatically
+                            test_k1_decision_matches_evaluate_gate
+                            test_real_rank_and_select_unchanged_when_pool_within_budget
+                            test_equal_expensive_eval_budget_across_arms
+                            test_k_gt_1_routes_distinct_behaviors_to_distinct_cells
 ```
 
-> ⚠️ 这 **29 项是 S2 之前的基线**。S2 重建 descriptor 后，`test_descriptor_v0.py` 里 `test_descriptor_separates_best_from_initial` / `test_strategy_axis_tracks_pandas_usage` 会被换成「graded 非退化」断言（届时数会变）。`test_k1_*`（C0 红线）始终保持绿。
-> 这些是**零 API 的单元/集成 smoke**，**不是**端到端 QD 实验（那要等 `qd/loop.py`，S4）。
+> `test_k1_*`（C0 红线）+ `test_loop_generation_path.py` 的 K=1 决策路径始终 == `evaluate_gate`。
+> 这些是**零 API 的单元/集成 smoke**，**不是**端到端 QD 实验（`qd/loop.py` 已建并测，但真实跑还需接 SkillOpt model adapter + API，见 S7+）。
 
 ## 布局（目录级）
 ```
