@@ -24,10 +24,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# ── bounded-normalization references (from observed SpreadsheetBench code stats)
-_LINES_REF = 120.0   # ~2x observed mean; caps long programs to 1.0
-_CTRL_REF = 24.0     # for+if count
-_TURNS_REF = 5.0     # observed max n_turns
+# ── bounded-normalization references (calibrated from 558 real SpreadsheetBench
+# code records — qd/tests/fixtures; see tools/analyze_descriptor_calibration.py).
+# Rescaling op-density by its p95 takes real-data grid occupancy 8/16 → 16/16
+# (entropy 2.03 → 3.81): ADR-0006 calibration addendum.
+_LINES_REF = 117.0    # p90 of real `lines`
+_CTRL_REF = 24.0      # ~p90 of real for+if count
+_OPDENS_REF = 0.20    # p95 of real ops/line; rescales the op-density axis onto [0,1]
+_TURNS_REF = 5.0      # observed max n_turns
 
 _OPS_RE = re.compile(
     r"\.iloc|\.loc|\.drop|read_excel|to_excel|load_workbook|\.cell\(|\.append\("
@@ -69,7 +73,7 @@ def phi(traj: dict) -> list[float]:
         _clip01(f.get("lines", 0) / _LINES_REF),
         _clip01(float(f.get("uses_pandas", 0))),
         _clip01(f.get("n_ctrl", 0) / _CTRL_REF),
-        _clip01(f.get("n_ops", 0) / (f.get("lines", 0) or 1)),  # op density (ops/line), ADR-0006
+        _clip01((f.get("n_ops", 0) / (f.get("lines", 0) or 1)) / _OPDENS_REF),  # op density (ops/line, p95-normalized), ADR-0006
         _clip01(n_turns / _TURNS_REF),
     ]
 
@@ -87,10 +91,11 @@ def project(mu_vec: list[float]) -> tuple[float, float]:
     """Tier-A hand-set g: μ∈[0,1]^5 → 2 interpretable axes ∈ [0,1]^2.
 
     axis0 = solution complexity (code length + control flow).
-    axis1 = op density (spreadsheet-op calls per line) — the GRADED strategy
-    signal. Replaces the old ``1 - uses_pandas`` axis, which saturated on the
-    homogeneous SpreadsheetBench data (best≈initial → archive collapsed to one
-    cell). See ADR-0006 (supersedes ADR-0002). ``uses_pandas`` stays in φ for
+    axis1 = op density (spreadsheet-op calls per line, p95-normalized so it spans
+    [0,1]) — the GRADED strategy signal. Replaces the old ``1 - uses_pandas`` axis,
+    which saturated on the openpyxl-dominated SpreadsheetBench data (best≈initial →
+    archive collapsed). Calibrated from 558 real records → 16/16 grid occupancy.
+    See ADR-0006 (supersedes ADR-0002). ``uses_pandas`` stays in φ for
     diagnostics but is intentionally unused here.
     """
     code_len, _uses_pandas, ctrl, op_density, _iter = mu_vec

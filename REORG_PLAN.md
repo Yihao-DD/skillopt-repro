@@ -5,7 +5,7 @@
 
 ## 🔖 RESUME HERE（当前状态，2026-06-08）
 - 分支: `reorg/2026-06-08`（== `master`）。**已 merge master + 推 origin（`82077db`，纯净）**；`archive/pre-reorg-2026-06-08` tag 已推（删掉的 audit/工作记录/旧产物可 `git checkout <tag> -- <file>` 恢复）。
-- 已完成: **S0–S9 + S12**（`qd/tests` = **38 passed**）。⚠️ descriptor 根因 P1 已修；**loop 全建**（P4 等预算 / P5 shared-baseline / F3 / dedup / UCB 父格 / cross-cell = 测试已验，零 API）；但**真正的 `n_occupied>1` 要在 REAL DeepSeek 数据上验** —— 需真实 model adapter + 预检门（S15/S16），均未建。
+- 已完成: **S0–S9 + S12 + descriptor 真实数据标定**（`qd/tests` = **39 passed**；master 持续推进）。⚠️ DeepSeek 可行性已 spike（key 可用 + 描述子在 **558 真实记录上占满 16/16 格**，op_density p95 归一，ADR-0006 标定附录）；但**端到端真实 `n_occupied>1` 仍需真 model adapter + 预检门**（S15/S16，未建）。spike/标定工具在 `tools/`。
 - **下一步 = S10–S14（打包/收编）**: S10 root `pyproject.toml`(path dep) → S11 fork openai-compat 提交进 fork + 记 SHA(patch 已删) → S13 vendor `SkillOpt/`→`vendor/SkillOpt/` → S14 benchmark tarball。再 S15（`configs/frozen` + `scripts/`：**真实 SkillOpt model adapter** + run_experiment）→ **S16 预检门**（最后）。真实 DeepSeek 验证在 S15-16 之后。
 - 研究任务看板（T0XX）见 `QD-over-Skills/.tasks/INDEX.md`，reorg 完成后恢复。决策/硬伤已锁定，见下两节。
 

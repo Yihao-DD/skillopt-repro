@@ -128,3 +128,13 @@ def test_strategy_axis_tracks_op_density() -> None:
     dense = mu([{"code": "ws.cell(1, 1)\nws.cell(2, 1)\nws.cell(3, 1)\n"}])   # ~1 op / line
     sparse = mu([{"code": "import openpyxl\nx = 1\ny = 2\nz = 3\nw = 4\n"}])   # ~0 ops / line
     assert project(dense)[1] > project(sparse)[1]
+
+
+def test_descriptor_spreads_real_fixtures_across_grid() -> None:
+    # Real-data non-degeneracy (ADR-0006 calibration): the 558 real SpreadsheetBench
+    # records must occupy most of the 16-cell grid (op-density p95-normalized →
+    # 16/16; was 8/16 raw). Guards against a ref/axis change silently re-collapsing
+    # the archive (the audit's P1). The old raw-op_density descriptor scores 8 here.
+    recs = _load("ssb_best_feat.jsonl") + _load("ssb_initial_feat.jsonl")
+    occupied = {descriptor([r]).cell for r in recs}
+    assert len(occupied) >= 12, f"grid collapsed: only {len(occupied)}/16 cells occupied"
