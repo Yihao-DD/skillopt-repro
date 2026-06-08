@@ -5,8 +5,9 @@
 
 ## 🔖 RESUME HERE（当前状态，2026-06-08）
 - 分支: `reorg/2026-06-08`（== `master`）。**已 merge master + 推 origin（`82077db`，纯净）**；`archive/pre-reorg-2026-06-08` tag 已推（删掉的 audit/工作记录/旧产物可 `git checkout <tag> -- <file>` 恢复）。
-- 已完成: **S0–S9 + S12 + descriptor 真实数据标定**（`qd/tests` = **39 passed**；master 持续推进）。⚠️ DeepSeek 可行性已 spike（key 可用 + 描述子在 **558 真实记录上占满 16/16 格**，op_density p95 归一，ADR-0006 标定附录）；但**端到端真实 `n_occupied>1` 仍需真 model adapter + 预检门**（S15/S16，未建）。spike/标定工具在 `tools/`。
-- **下一步 = S10–S14（打包/收编）**: S10 root `pyproject.toml`(path dep) → S11 fork openai-compat 提交进 fork + 记 SHA(patch 已删) → S13 vendor `SkillOpt/`→`vendor/SkillOpt/` → S14 benchmark tarball。再 S15（`configs/frozen` + `scripts/`：**真实 SkillOpt model adapter** + run_experiment）→ **S16 预检门**（最后）。真实 DeepSeek 验证在 S15-16 之后。
+- 已完成: **S0–S12 + 描述子真实数据标定 + S15 真实 adapter + 真实 DeepSeek 验证**（`qd/tests` = **39 passed**；master `c259b8f`+）。`qd/adapter_skillopt.py` 接真 SkillOpt+DeepSeek；`tools/run_qd_validation.py` 跑了公平 K=1-vs-K=4（N=20、等预算 12、frozen target temp=0 / optimizer temp=0.8、~$0.7）。
+- **🎯 验证 verdict（诚实负结果，已收口）**: 贪心 **K=1(0.65) 赢 QD K=4(0.50)**；[Q1] QD 探索 ✅ / [Q2] payoff ❌ → **QD 当前不 work**（探索薄 2 格、贪心没被困在局部最优、budget 短）。**真正定论 = 全量测试**（更大 N + 更长 budget + 把「瞄准着采」`qd/variation.py` 接进 `adapter.propose`，让 QD 在最强形态下测）。
+- **剩余待做（非阻塞）**: S13/S14（un-gitignore + vendor `SkillOpt/`→`vendor/SkillOpt/` + benchmark tarball，交付公司前）、S16 `scripts/preflight_gate.py`（预检门）。
 - 研究任务看板（T0XX）见 `QD-over-Skills/.tasks/INDEX.md`，reorg 完成后恢复。决策/硬伤已锁定，见下两节。
 
 ## 已锁定的决策（"按你建议来"）
