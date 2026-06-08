@@ -1,5 +1,11 @@
 # AGENTS.md — 入口（agent 第一眼读这个）
 
+## ⛓️ 硬约定（最先判断）：`在公司，` 上下文标记
+
+- prompt 中**每句**以 `在公司，` 开头 ⇒ **公司上下文（company mode）** ⇒ 你是 **runs-only**：❌ 绝不改任何被追踪代码、绝不 `commit`/`push`/打 tag；✅ 只按 `handoff/RUNBOOK.md` 跑 `run_experiment.py` + 填 `FEEDBACK.md`；要改代码 ⇒ 写成 `FEEDBACK.md` 的 described-diff、**停手**，等我方重发 tag。
+- 无此前缀 ⇒ **我方上下文**，完整权限（写码、提交、打 tag、跑预检）。
+- **存疑 / 前缀不一致 ⇒ 按更受限的公司模式处理**。详见 `../PROCESS.md §9`。
+
 > ⚠️ **先读 `OPEN_DECISIONS.md`**：有需要**公司侧拍板**的阻塞项（API / 模型访问）。未决前**只做不花钱的本地工作**（读源码、写 `qd/`、T001 回归测试、smoke test），不要跑昂贵付费实验。
 
 你正在参与 **QD-over-Skills** 项目。开工前按顺序读：
