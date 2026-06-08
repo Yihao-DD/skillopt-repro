@@ -10,9 +10,12 @@ axes → grid cell.
 
 Why code-level (see qd/tests/fixtures + T002 status): result-level fields
 (``n_turns``/``exec_ok``) *saturate* across skills (best≈initial → they track
-performance, not strategy). Code-level features separate strategy — best favors
-verbose openpyxl + control flow, initial leans pandas. The descriptor must see
-that behavioral gap, else QD binning collapses onto fitness.
+performance, not strategy). The two axes are program **complexity** (size +
+control flow) and **op density** (spreadsheet-op calls per line) — graded code
+signals. The earlier ``1 - uses_pandas`` strategy axis saturated and collapsed
+the archive to one cell; ADR-0006 (supersedes ADR-0002) replaces it with op
+density. The real non-degeneracy guard is runtime ``n_occupied > 1``, not a
+2-fixture cell split.
 
 Pure stdlib, deterministic, zero API.
 """
@@ -24,7 +27,6 @@ from dataclasses import dataclass
 # ── bounded-normalization references (from observed SpreadsheetBench code stats)
 _LINES_REF = 120.0   # ~2x observed mean; caps long programs to 1.0
 _CTRL_REF = 24.0     # for+if count
-_OPS_REF = 16.0      # spreadsheet-op count
 _TURNS_REF = 5.0     # observed max n_turns
 
 _OPS_RE = re.compile(
@@ -67,7 +69,7 @@ def phi(traj: dict) -> list[float]:
         _clip01(f.get("lines", 0) / _LINES_REF),
         _clip01(float(f.get("uses_pandas", 0))),
         _clip01(f.get("n_ctrl", 0) / _CTRL_REF),
-        _clip01(f.get("n_ops", 0) / _OPS_REF),
+        _clip01(f.get("n_ops", 0) / (f.get("lines", 0) or 1)),  # op density (ops/line), ADR-0006
         _clip01(n_turns / _TURNS_REF),
     ]
 
@@ -84,13 +86,16 @@ def mu(trajs: list[dict]) -> list[float]:
 def project(mu_vec: list[float]) -> tuple[float, float]:
     """Tier-A hand-set g: μ∈[0,1]^5 → 2 interpretable axes ∈ [0,1]^2.
 
-    axis0 = solution complexity (code length + control flow + op density).
-    axis1 = library strategy (0 = pandas-heavy … 1 = openpyxl/manual-heavy).
+    axis0 = solution complexity (code length + control flow).
+    axis1 = op density (spreadsheet-op calls per line) — the GRADED strategy
+    signal. Replaces the old ``1 - uses_pandas`` axis, which saturated on the
+    homogeneous SpreadsheetBench data (best≈initial → archive collapsed to one
+    cell). See ADR-0006 (supersedes ADR-0002). ``uses_pandas`` stays in φ for
+    diagnostics but is intentionally unused here.
     """
-    code_len, uses_pandas, ctrl, ops, _iter = mu_vec
-    complexity = _clip01((code_len + ctrl + ops) / 3.0)
-    strategy = _clip01(1.0 - uses_pandas)
-    return (complexity, strategy)
+    code_len, _uses_pandas, ctrl, op_density, _iter = mu_vec
+    complexity = _clip01((code_len + ctrl) / 2.0)
+    return (complexity, _clip01(op_density))
 
 
 def cell_of(b: tuple[float, float], nbins: int = 4) -> int:

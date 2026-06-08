@@ -6,9 +6,10 @@ Validates the Tier-A code-level descriptor (`qd/descriptor.py`):
   - **stability (SPEC 命题 3.2)**: a skill's behavior point b is stable under
     probe-set resampling (small per-axis std) — uses the real SpreadsheetBench
     best-skill trajectory fixture;
-  - **separation (命题 3.8 dep ii)**: best vs initial land at different b
-    (best leans openpyxl+complexity, initial leans pandas) — the behavioral gap
-    result-level fields could NOT see.
+  - **non-degeneracy (ADR-0006)**: the projection is GRADED (both axes vary and
+    spread across cells) on a diverse synthetic set. The real guard is runtime
+    ``n_occupied>1`` — the homogeneous SSB fixtures collapse to one cell, so a
+    2-fixture best≠initial split is not assertable (see descriptor spike).
 
 Fixtures: qd/tests/fixtures/ssb_{best,initial}_feat.jsonl (279 per-task
 code-feature records each, extracted from outputs/ssb_dpsk_run1). Zero API.
@@ -101,18 +102,29 @@ def test_cell_deterministic_and_in_range() -> None:
 
 # ── separation: best vs initial (命题 3.8 dep ii) ─────────────────────────────
 
-def test_descriptor_separates_best_from_initial() -> None:
-    best = descriptor(_load("ssb_best_feat.jsonl"))
-    initial = descriptor(_load("ssb_initial_feat.jsonl"))
-    # library-strategy axis (1 - pandas): initial uses pandas more → lower.
-    assert best.b[1] > initial.b[1], (best.b, initial.b)
-    # behavior points are not identical (unlike result-level fields).
-    assert best.b != initial.b
+def test_descriptor_axes_are_graded_not_degenerate() -> None:
+    # ADR-0006: real non-degeneracy guard is runtime n_occupied>1 (homogeneous
+    # SSB fixtures collapse to one cell — see spike). Here we assert the
+    # projection is GRADED on a diverse synthetic set: both axes vary and the set
+    # spreads across multiple cells, so the projection has not degenerated.
+    samples = [
+        {"code": "import pandas as pd\ndf = pd.read_excel('x')\ndf.to_excel('y')\n"},
+        {"code": "import openpyxl\n" + "".join(f"for c in range(3):\n    if c:\n        ws.cell({r}, c).value = {r}\n" for r in range(8))},
+        {"code": "import openpyxl\nfor r in rows:\n    if r:\n        ws.cell(r, 1)\n        ws.cell(r, 2)\n"},
+        {"code": "a = 1\nb = 2\nc = a + b\n"},
+    ]
+    pts = [descriptor([s]).b for s in samples]
+    cells = {descriptor([s]).cell for s in samples}
+    assert len(cells) >= 3, f"projection collapsed: cells={cells}, pts={pts}"
+    for axis in (0, 1):
+        spread = max(p[axis] for p in pts) - min(p[axis] for p in pts)
+        assert spread > 0.1, f"axis {axis} not graded: spread={spread:.3f}"
 
 
-def test_strategy_axis_tracks_pandas_usage() -> None:
-    # μ separates on the pandas axis even if the projected cells happen to share a bin.
-    mu_best = mu(_load("ssb_best_feat.jsonl"))
-    mu_init = mu(_load("ssb_initial_feat.jsonl"))
-    assert mu_init[1] > mu_best[1]  # initial has higher mean uses_pandas
-    assert project(mu_best)[1] > project(mu_init)[1]
+def test_strategy_axis_tracks_op_density() -> None:
+    # axis1 is op density (spreadsheet-op calls per line) — the graded strategy
+    # signal that replaces the saturating 1-uses_pandas axis (ADR-0006). Both
+    # samples are pandas-free, which the OLD axis mapped to an identical 1.0.
+    dense = mu([{"code": "ws.cell(1, 1)\nws.cell(2, 1)\nws.cell(3, 1)\n"}])   # ~1 op / line
+    sparse = mu([{"code": "import openpyxl\nx = 1\ny = 2\nz = 3\nw = 4\n"}])   # ~0 ops / line
+    assert project(dense)[1] > project(sparse)[1]

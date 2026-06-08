@@ -1,6 +1,6 @@
 # ADR-0002 — descriptor v0 轴选(代码级行为 φ)
 
-- 状态: Accepted
+- 状态: **Superseded by ADR-0006**（2026-06-08：axis1 = 1−uses_pandas 在真实数据饱和 → 档案塌缩 P1；改 graded op_density）
 - 日期: 2026-06-06
 - 关联: T002；SPEC §3.1 / 命题 3.2 / 3.8(ii)；BRIEF §4 红线(descriptor 只从 τ、不碰文字)。
 

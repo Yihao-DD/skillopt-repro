@@ -5,8 +5,8 @@
 
 ## 🔖 RESUME HERE（当前状态，2026-06-08）
 - 分支: `reorg/2026-06-08`（== `master`）。**已 merge master + 推 origin（`82077db`，纯净）**；`archive/pre-reorg-2026-06-08` tag 已推（删掉的 audit/工作记录/旧产物可 `git checkout <tag> -- <file>` 恢复）。
-- 已完成: **S0 / F0 / S1 / S12**（`qd/tests` = **29 passed**）。⚠️ 代码层面只修了 S1 的 6 个小 bug；审计根因（descriptor 塌缩 P1）+ loop（P4/P5/F3）+ 预检门 **均未做**。
-- **下一步 = S2**: 读 `qd/tests/test_descriptor_v0.py` + `test_descriptor_validation.py` → 重建 `qd/descriptor.py` axis1 = graded `op_density`（`phi[3]`→ops/line；`project` axis0=size+control、axis1=op_density；`uses_pandas` 留 φ 不用）→ 写 `ADR-0006` supersede `ADR-0002` → 更新 axis1 相关断言(含 `test_strategy_axis_tracks_pandas_usage`) + 加 graded-非退化测试 → `pytest` 绿。之后 **S4** 建 `qd/loop.py`。
+- 已完成: **S0 / F0 / S1 / S2 / S3 / S12**（`qd/tests` = **29 passed**）。⚠️ 审计根因 descriptor 塌缩（P1）**已修**（ADR-0006，op_density 轴）；但 loop（P4/P5/F3）+ 预检门仍**未做** —— 真正的 `n_occupied>1` 非退化判据要等 runtime。
+- **下一步 = S4**: 建 `qd/loop.py` —— 抽 `produce_and_score_candidate`（rollout→reflect→merge→`scheduler.step()`→`rank_and_select`(from `skillopt.optimizer.clip`)→apply_patch→hash）。然后 S5（baseline 冻结注入两臂）/ S6（共享 EvalCounter+cosine）/ S7（K>1 路 descriptor→Archive）/ S8（K=1 生成路径测试，闭 F3）。
 - 研究任务看板（T0XX）见 `QD-over-Skills/.tasks/INDEX.md`，reorg 完成后恢复。决策/硬伤已锁定，见下两节。
 
 ## 已锁定的决策（"按你建议来"）
@@ -29,8 +29,8 @@
 - [x] **S0** 建分支 + 捕获 fork 脏态 + 确认 F1。
 - [x] **F0** root `conftest.py`（解耦 import）+ 本 plan + pytest 基线绿。
 - [x] **S1** 修 MED/LOW bug: variation 按值去重(identity)、novelty 欠填(strict 标志)、archive None sentinel + 种任意 cell。+4 回归测试。（is_plateau 逻辑本就对，仅文档；29 passed）
-- [ ] **S2** descriptor axis1=`op_density`（graded）；处理被弃的第 5 特征；→ ADR-0006 supersede ADR-0002。
-- [ ] **S3** descriptor 测试: 非退化(两轴 graded/有方差) + 保 text-invariance；枚举更新所有 axis1 相关断言(含 `test_strategy_axis_tracks_pandas_usage`)。
+- [x] **S2** descriptor axis1=`op_density`（graded，`n_ops/lines`）；axis0=`(code_len+ctrl)/2`；`uses_pandas` 留 φ 不用；ADR-0006 supersede ADR-0002。
+- [x] **S3** descriptor 测试: `_axes_are_graded_not_degenerate`（两轴 graded + 跨≥3格）+ `_tracks_op_density` 换掉 pandas 轴断言；保 text-invariance；RED→GREEN 验证，29 passed。
 - [ ] **S4** `qd/loop.py`: 抽 `produce_and_score_candidate`（rollout→reflect→merge→`scheduler.step()`→`rank_and_select`(from `skillopt.optimizer.clip`)→apply_patch→hash）。
 - [ ] **S5** baseline 一次冻结 + 注入两臂（K=1 单格 elite；K>1 种 baseline 的 descriptor cell）。
 - [ ] **S6** 一个共享 `EvalCounter` + 一个共享 cosine scheduler；`EvalCounter._cache`=sel_cache；暴露 per-arm expensive_evals / per-step edit_budget / n_occupied / cross-cell。
