@@ -78,18 +78,34 @@ def build_variation_prompt(archive: Archive, request: VariationRequest) -> str:
     return "\n".join(lines)
 
 
-def select_candidate_edits(candidates: list[CandidateEdit], request: VariationRequest) -> list[CandidateEdit]:
-    """Select up to ``n_candidates`` edits, honoring novelty quota when possible.
+def select_candidate_edits(
+    candidates: list[CandidateEdit],
+    request: VariationRequest,
+    *,
+    strict_novelty: bool = False,
+) -> list[CandidateEdit]:
+    """Select up to ``n_candidates`` edits, honoring the novelty quota when possible.
 
-    Candidates are already optimizer samples; this function only enforces the
-    local T004 policy contract. Higher ``priority`` wins deterministically.
+    Candidates are already optimizer samples; this enforces the local T004 policy.
+    Higher ``priority`` wins deterministically. Dedup is by IDENTITY (``id``), NOT
+    value, so two distinct-but-value-equal sampled edits are both kept (the optimizer
+    may legitimately sample identical-looking patches).
+
+    ``strict_novelty=True`` raises when fewer than ``request.min_novel`` novel
+    candidates exist; the default is best-effort (return whatever novelty is available).
     """
     ordered = sorted(candidates, key=lambda c: c.priority, reverse=True)
     novel = [c for c in ordered if c.is_novel]
-    selected: list[CandidateEdit] = novel[: request.min_novel]
+    if strict_novelty and len(novel) < request.min_novel:
+        raise ValueError(
+            f"strict novelty quota unmet: need {request.min_novel}, have {len(novel)}"
+        )
+    selected: list[CandidateEdit] = list(novel[: request.min_novel])
+    selected_ids = {id(c) for c in selected}
     for cand in ordered:
         if len(selected) >= request.n_candidates:
             break
-        if cand not in selected:
+        if id(cand) not in selected_ids:
             selected.append(cand)
+            selected_ids.add(id(cand))
     return selected

@@ -6,7 +6,13 @@ from dataclasses import dataclass
 
 
 def is_plateau(scores: list[float], window: int = 3, min_delta: float = 0.0) -> bool:
-    """Return True when the last ``window`` transitions show no improvement."""
+    """Return True when the best-so-far has not improved over the last ``window`` steps.
+
+    PRECONDITION: ``scores`` is the best-so-far sequence (monotone non-decreasing),
+    as produced by the QD loop's global-best history. Plateau = the window's max did
+    not exceed the value at the window start by more than ``min_delta``. (For a
+    non-monotone input this "no new high in the window" reading still holds.)
+    """
     if window < 1:
         raise ValueError("window must be >= 1")
     if len(scores) < window + 1:

@@ -3,6 +3,8 @@
 > 任务状态的唯一权威来源。状态变更**先改这里，再改对应 `status.md`**。
 > 状态：`TODO | IN_PROGRESS | BLOCKED | REVIEW | DONE | DROPPED`
 
+> ⚠️ **2026-06-08 reorg 进行中**：当前活的执行清单是根目录 `REORG_PLAN.md`（分支 `reorg/2026-06-08`，S0/F0/S1 done，S2 next）。下面的 T0XX 研究任务在 reorg 完成后恢复。
+
 ## 🚩 阻塞项
 - **BLOCKER-1（API / 模型访问）** — 见 `OPEN_DECISIONS.md`，**待公司**。阻塞一切昂贵付费实验（T008、T011…）；不阻塞本地工作。
 

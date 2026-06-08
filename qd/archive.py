@@ -45,13 +45,25 @@ class Archive:
     an occupied cell accepts only when ``cand_score > elite.score``.
     """
 
-    def __init__(self, k: int = 1, baseline_skill: str = "", baseline_score: float = -1.0) -> None:
+    def __init__(
+        self,
+        k: int = 1,
+        baseline_skill: str | None = None,
+        baseline_score: float | None = None,
+        baseline_cell: int = 0,
+    ) -> None:
         if k < 1:
             raise ValueError("k must be >= 1")
         self.k = k
         self._elites: dict[int, Elite] = {}
-        if baseline_skill or baseline_score > float("-inf"):
-            self._elites[0] = Elite(skill=baseline_skill, score=baseline_score, step=0)
+        # Seed the frozen baseline elite ONLY when explicitly provided (None sentinel):
+        # an unparameterised Archive() is truly EMPTY (no phantom skill=''/score=-1 elite).
+        # ``baseline_cell`` lets the loop seed the baseline into its descriptor cell for
+        # K>1 (normalised to 0 at K=1), supporting the shared-baseline requirement.
+        if baseline_skill is not None and baseline_score is not None:
+            self._elites[self._normalize_cell(baseline_cell)] = Elite(
+                skill=baseline_skill, score=baseline_score, step=0
+            )
 
     def update(self, candidate_skill: str, cand_score: float, step: int, cell: int = 0) -> UpdateResult:
         """Per-cell strict gate (ties reject). K=1 -> single cell (cell 0)."""

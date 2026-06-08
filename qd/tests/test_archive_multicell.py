@@ -35,3 +35,16 @@ def test_k1_still_normalizes_all_updates_to_cell_zero() -> None:
     res = arch.update("S1", 1.0, step=1, cell=99)
     assert res.cell == 0
     assert arch.occupied_cells() == (0,)
+
+
+def test_unparameterized_archive_is_truly_empty() -> None:
+    # Regression: default args used to seed a phantom baseline (skill='', score=-1.0).
+    assert Archive(k=4).occupied_cells() == ()
+    assert Archive(k=1).occupied_cells() == ()
+
+
+def test_baseline_can_seed_an_arbitrary_cell() -> None:
+    arch = Archive(k=16, baseline_skill="S0", baseline_score=0.5, baseline_cell=7)
+    assert arch.occupied_cells() == (7,)
+    assert arch.elite(7).skill == "S0"
+    assert arch.best_score == 0.5
