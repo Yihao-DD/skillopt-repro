@@ -216,9 +216,10 @@ def run_search(
         raise ValueError("eval_budget must be >= 1")
     counter = counter if counter is not None else EvalCounter()
     cps = candidates_per_step if candidates_per_step is not None else (1 if k == 1 else k)
+    grid_cells = 1 if k == 1 else 16  # K=1 == single-cell SkillOpt; K>1 = full descriptor grid (nbins=4 -> 16)
     total_steps = max(1, eval_budget // cps)
     scheduler = build_scheduler("cosine", max_lr=max_lr, min_lr=min_lr, total_steps=total_steps)
-    archive = Archive(k=k, baseline_skill=baseline_skill, baseline_score=baseline_score, baseline_cell=baseline_cell)
+    archive = Archive(k=grid_cells, baseline_skill=baseline_skill, baseline_score=baseline_score, baseline_cell=baseline_cell)
     result = SearchResult(arm=("K=1" if k == 1 else f"K={k}"), archive=archive, counter=counter)
     cell_visits: dict[int, int] = {}
 

@@ -4,11 +4,12 @@ The `qd/` package runs over a **frozen** SkillOpt fork. This file records exactl
 which fork snapshot is vendored, for provenance (ADR-0004).
 
 ## Current
-- **Fork commit:** `05a023c` — "fix(model): OpenAI-compatible backend for DeepSeek (max_tokens, drop reasoning_effort)"
+- **Fork commit:** `0948d2d` — "feat(model): role-aware decoding for openai-compat" (on top of `05a023c`)
 - **Upstream base:** `microsoft/SkillOpt` @ `ee9931e` ("docs: add SkillOpt integration news")
-- **Delta vs upstream:** one commit — `skillopt/model/azure_openai.py` openai-compatible adapter
-  (`_is_openai_compat_client` → use `max_tokens` not `max_completion_tokens`, drop `reasoning_effort`),
-  enabling the DeepSeek (OpenAI-compatible) backend.
+- **Delta vs upstream:** two commits to `skillopt/model/azure_openai.py` —
+  (1) `05a023c` openai-compatible adapter (`_is_openai_compat_client` → `max_tokens`, drop `reasoning_effort`);
+  (2) `0948d2d` role-aware decoding from env (`TARGET_TEMPERATURE`/`TARGET_SEED` = frozen target;
+  `OPTIMIZER_TEMPERATURE` = diverse variation), enabling the QD frozen-target red line on DeepSeek.
 - **Recorded:** 2026-06-08.
 
 > Reproduce the fork from scratch: `microsoft/SkillOpt@ee9931e` + the single

@@ -1,0 +1,16 @@
+# Frozen target/optimizer for QD-over-Skills validation runs (red line P2).
+# Pin the model snapshot + decoding so runs are reproducible.
+model: deepseek-chat
+provider: deepseek            # OpenAI-compatible, https://api.deepseek.com
+date: 2026-06-08
+decoding:
+  target_temperature: 0        # -> TARGET_TEMPERATURE (frozen → reproducible eval)
+  target_seed: 42              # -> TARGET_SEED
+  optimizer_temperature: 0.8   # -> OPTIMIZER_TEMPERATURE (diverse variation; no seed)
+  max_completion_tokens: 4096
+roles:
+  target: deepseek-chat
+  optimizer: deepseek-chat
+notes: >
+  Determinism via the fork's azure_openai._chat_impl temperature/seed env support
+  (fork commit after 05a023c). DeepSeek seed is best-effort, not bit-exact.
