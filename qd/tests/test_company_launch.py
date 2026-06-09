@@ -95,3 +95,8 @@ def test_tag_rejects_path_chars():
     # The tag becomes a dir name — reject anything that could escape runs/.
     with pytest.raises(ValueError):
         resolve_plan(full=True, tag="../etc")
+
+
+def test_parser_accepts_probe_descriptor():
+    args = build_parser().parse_args(["--probe-descriptor", "--probe-n", "5"])
+    assert args.probe_descriptor and args.probe_n == 5

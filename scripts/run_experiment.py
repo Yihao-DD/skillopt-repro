@@ -233,7 +233,54 @@ def run(plan: Plan) -> dict:
     print(f"  K={plan.k} best = {rk.best_score}  n_occupied={rk.n_occupied}  cross_cell={rk.cross_cell_pickups}")
     print(f"  [Q1] QD explores (n_occupied>1):              {summary['verdict']['q1_qd_explores']}")
     print(f"  [Q2] QD payoff (K>1 best > K=1, equal budget): {summary['verdict']['q2_qd_payoff_at_equal_budget']}")
+    if rk.n_occupied <= 1:
+        print("  ⚠️ QD 臂只占 1 格 → descriptor 在此模型上塌缩，QD 退化成贪心、本次对比无意义；"
+              "先跑 --probe-descriptor 复查并回我方重标定。")
     print(f"  summary -> {os.path.join(out, 'summary.json')}")
+    return summary
+
+
+def probe_descriptor(n: int) -> dict:
+    """Cheap pre-full check: does the descriptor resolve THIS model's code outputs?
+
+    Runs the baseline skill once over n items and bins each item's generated code.
+    If the per-item cells collapse to <3 distinct cells, the descriptor has no
+    resolution on this model (the Qwen3 morning-run failure mode) and the QD arm
+    will degenerate to greedy — STOP before spending a full run. Writes runs/probe/probe.json.
+    """
+    os.environ.setdefault("TARGET_TEMPERATURE", "0")
+    os.environ.setdefault("TARGET_SEED", "42")
+    from skillopt.envs.spreadsheetbench.rollout import load_items
+
+    from qd.adapter_skillopt import configure_deepseek, make_producer
+    from qd.descriptor import descriptor
+
+    cfg = configure_deepseek()
+    items_json, data_root = _data_paths()
+    items = load_items(items_json)[:n]
+    out = os.path.join(ROOT, "runs", "probe")
+    print("== QD-over-Skills · probe-descriptor ==")
+    print(f"backend: {cfg}")
+    prod = make_producer(items=items, data_root=data_root, out_root=out, max_completion_tokens=4096)
+    trajs = prod.probe(INITIAL)
+    per_item = [descriptor([t]).cell for t in trajs]
+    agg = descriptor(trajs).cell
+    distinct = sorted(set(per_item))
+    ok = len(distinct) >= 3
+    print(f"probe: baseline skill over {len(items)} items")
+    print(f"  per-item cells = {per_item}")
+    print(f"  distinct cells = {len(distinct)}/16 -> {distinct}   (aggregate skill cell = {agg})")
+    if ok:
+        print("  PROBE OK: descriptor 在此模型上有分辨率（≥3 格），可以继续 --full。")
+    else:
+        print("  ⚠️ PROBE FAIL: descriptor 在此模型上塌缩（<3 格）== 今早 Qwen3 那次。")
+        print("     先别烧全量；把这个 probe 结果发回我方，给该模型重标定 descriptor 再跑。")
+    summary = {"backend": cfg, "n_items": len(items), "per_item_cells": per_item,
+               "distinct_cells": distinct, "aggregate_cell": agg, "probe_ok": ok}
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "probe.json"), "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, ensure_ascii=False, indent=2)
+    print(f"  probe -> {os.path.join(out, 'probe.json')}")
     return summary
 
 
@@ -243,11 +290,14 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--full", action="store_true", help="全量：test 全集，K=1 贪心 vs K=4 QD，等预算")
     g.add_argument("--preflight", action="store_true", help="小试冒烟（默认 2 题）")
     p.add_argument("--n", type=int, default=None, help="覆盖任务数（默认 full=全集 / preflight=2）")
-    p.add_argument("--eval-budget", type=int, default=None, help="每臂昂贵评估预算（默认 full=12 / preflight=6）")
+    p.add_argument("--eval-budget", type=int, default=None, help="每臂昂贵评估预算（默认 full=24 / preflight=6）")
     p.add_argument("--k", type=int, default=None, help="QD 臂的 K（默认 4；K=1 臂始终作为贪心对照）")
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--max-tokens", type=int, default=4096)
     p.add_argument("--tag", default=None, help="本次运行标签 → 写到 runs/<mode>-<tag>/（多 API 对比时分目录，不互相覆盖）")
+    p.add_argument("--probe-descriptor", action="store_true",
+                   help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
+    p.add_argument("--probe-n", type=int, default=8, help="--probe-descriptor 的题数（默认 8）")
     p.add_argument("--dry-run", action="store_true", help="只解析计划 + 检查 fork/数据/key，不调模型、不花钱")
     return p
 
@@ -255,9 +305,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.full and not args.preflight:
-        parser.error("必须指定 --full（全量 280 题）或 --preflight（2 题冒烟）；不给默认值以防误跑成部分。")
     load_dotenv(ROOT)
+    if args.probe_descriptor:
+        if not os.environ.get("AZURE_OPENAI_API_KEY"):
+            print("ERROR: AZURE_OPENAI_API_KEY 未设置（probe 要真调一次模型）。先填 .env。", file=sys.stderr)
+            return 2
+        return 0 if probe_descriptor(args.probe_n)["probe_ok"] else 3
+    if not args.full and not args.preflight:
+        parser.error("必须指定 --full（全量 280 题）/ --preflight（2 题冒烟）/ --probe-descriptor（descriptor 探针）。")
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
                         k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag)
     print(f"== QD-over-Skills · mode={plan.mode} ==")

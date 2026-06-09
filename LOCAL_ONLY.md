@@ -88,7 +88,7 @@ copy .env.example .env      # 然后编辑 .env
 | 并发 / 单次 token | 8 / 4096 | `--workers` / `--max-tokens` |
 | 输出分目录（多 API 对比） | `runs/full/` | `--tag deepseek` → `runs/full-deepseek/`（各 API 不互相覆盖） |
 
-**成本量级**（随 N × eval_budget × 你的 token 单价线性增长）：我方 DeepSeek 验证 N=20/budget=12 ≈ $0.7；全量 N=280/budget=24 ≈ 28× ≈ **~$20（DeepSeek 价）**。换更贵的模型按 token 单价等比放大。`--dry-run` + `--preflight` 先把风险压掉再上全量。
+**成本量级**（随 N × eval_budget × 你的 token 单价线性增长）：我方 DeepSeek 验证 N=20/budget=12 ≈ $0.7；全量 N=280/budget=24 ≈ 28× ≈ **~$20（DeepSeek 价）**。换更贵的模型按 token 单价等比放大。`--dry-run` + `--preflight` 先把风险压掉再上全量；**`--probe-descriptor`**（~8 题、几毛）验该模型 descriptor 散不散（<3 格 = 塌缩 → QD 退化成贪心，别烧全量、回我方重标定 —— 防的就是 Qwen3 那次空跑）。
 
 > ⚠️ **诚实边界**：当前 `adapter.propose` 只是单纯 reflect，QD 的「瞄准着采」（target-cell-conditioned variation，`qd/variation.py`）**还没接进 propose**。所以 `--full` 测的是 QD 的**当前形态**（K>1 分格 + 格内 `>` gate），不是其最强形态。小样本验证里贪心 K=1（0.65）暂赢 QD K=4（0.50）——全量是为了在更大 N/更长 budget 上复核这个结论，不是已经认定 QD 赢。详见 [`README.md`](README.md) 「🎯 验证结果」。
 

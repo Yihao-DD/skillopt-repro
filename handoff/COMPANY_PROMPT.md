@@ -70,6 +70,12 @@ summary.json 回传。逐步执行，做完一步确认 OK 再下一步：
   python scripts/run_experiment.py --preflight --tag <本次API名>
   跑通打印出 VERDICT 即可；报错就停、把报错发回。
 
+— 步骤 7.5：descriptor 探针（关键！花几毛防白烧 3 小时）—
+  python scripts/run_experiment.py --probe-descriptor
+  看输出的 "distinct cells"：**≥3 才继续**；若 <3（打印 PROBE FAIL）→ **停**，
+  把这段 probe 输出发回我方（说明该模型 descriptor 塌缩、QD 会退化成贪心 == 之前
+  Qwen3 那次，要重标定），别烧全量。
+
 — 步骤 8：跑全量（正式 run，必须 --full）—
   python scripts/run_experiment.py --full --tag <本次API名>
   ⚠️ 必须 --full = 全部 280 题，不是 --preflight、不是子集。深度 24 evals/臂，耗时较长、
