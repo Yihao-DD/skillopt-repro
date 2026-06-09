@@ -64,7 +64,7 @@ prompt **每句**以 `在公司，` 开头 ⇒ **公司模式（runs-only）**�
 ### `scripts/` — 公司一键全量入口（本次补齐启动面 S16）
 | 文件 | 干什么 |
 |---|---|
-| `scripts/run_experiment.py` | **一键启动**：`--full`（test 全集 N=280，K=1 贪心 vs K=4 QD，等预算 12/臂）/ `--preflight`（2 题冒烟）/ `--dry-run`（零费用自检 fork+数据+key）。读 `.env` 换 API、设冻结 target（temp=0/seed=42）、写 `runs/<mode>/summary.json`（含 verdict、不含 key）。跑的是 `run_qd_validation` 同款核心，参数化成 CLI。 |
+| `scripts/run_experiment.py` | **一键启动**：`--full`（test 全集 N=280，K=1 贪心 vs K=4 QD，等预算 24/臂）/ `--preflight`（2 题冒烟）/ `--dry-run`（零费用自检 fork+数据+key）。读 `.env` 换 API、设冻结 target（temp=0/seed=42）、写 `runs/<mode>/summary.json`（含 verdict、不含 key）。跑的是 `run_qd_validation` 同款核心，参数化成 CLI。 |
 | `scripts/make_bundle.py` | **我方发包**：把仓库 + gitignored 的 `SkillOpt/` fork + SpreadsheetBench 数据 + `.env.example` 打成自包含 air-gap zip（排除 `.env`/`.git`/`outputs`/非 SSB 数据）+ sha256。`--dry-run` 看清单体积。 |
 | `scripts/__init__.py` | 让 `scripts` 可被零 API 测试 import（`resolve_plan`/`_included`，见 `qd/tests/test_company_launch.py`）。 |
 

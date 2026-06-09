@@ -16,7 +16,7 @@ def test_full_preset_uses_whole_split_and_equal_budget():
     # Assert
     assert plan.mode == "full"
     assert plan.n is None          # None => all 280 test items, resolved at run time
-    assert plan.eval_budget == 12  # per arm — the equal-budget red line
+    assert plan.eval_budget == 24  # per arm — the equal-budget red line (full default)
     assert plan.k == 4
 
 

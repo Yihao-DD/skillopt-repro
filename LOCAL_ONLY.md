@@ -78,16 +78,16 @@ copy .env.example .env      # 然后编辑 .env
 
 ## 5. “全量”到底跑什么 + 旋钮 + 成本
 
-`--full` = SpreadsheetBench **test 全集 N=280**，**K=1 贪心 vs K=4 QD**，**等预算** `eval_budget=12`/臂，frozen target（temp=0+seed=42）/ optimizer temp=0.8。两臂共享同一 baseline。
+`--full` = SpreadsheetBench **test 全集 N=280**，**K=1 贪心 vs K=4 QD**，**等预算** `eval_budget=24`/臂，frozen target（temp=0+seed=42）/ optimizer temp=0.8。两臂共享同一 baseline。
 
 | 旋钮 | 默认（full） | 覆盖方式 |
 |---|---|---|
 | 任务数 N | 280（test 全集） | `--n 50` |
-| 每臂昂贵评估预算 | 12 | `--eval-budget 24` |
+| 每臂昂贵评估预算 | 24 | `--eval-budget 12`（降浅省钱）/ `48`（加深） |
 | QD 臂的 K | 4 | `--k 8` |
 | 并发 / 单次 token | 8 / 4096 | `--workers` / `--max-tokens` |
 
-**成本量级**（随 N × eval_budget × 你的 token 单价线性增长）：我方 DeepSeek 验证 N=20/budget=12 ≈ $0.7；全量 N=280 ≈ 14× ≈ **$8–12（DeepSeek 价）**。换更贵的模型按 token 单价等比放大。`--dry-run` + `--preflight` 先把风险压掉再上全量。
+**成本量级**（随 N × eval_budget × 你的 token 单价线性增长）：我方 DeepSeek 验证 N=20/budget=12 ≈ $0.7；全量 N=280/budget=24 ≈ 28× ≈ **~$20（DeepSeek 价）**。换更贵的模型按 token 单价等比放大。`--dry-run` + `--preflight` 先把风险压掉再上全量。
 
 > ⚠️ **诚实边界**：当前 `adapter.propose` 只是单纯 reflect，QD 的「瞄准着采」（target-cell-conditioned variation，`qd/variation.py`）**还没接进 propose**。所以 `--full` 测的是 QD 的**当前形态**（K>1 分格 + 格内 `>` gate），不是其最强形态。小样本验证里贪心 K=1（0.65）暂赢 QD K=4（0.50）——全量是为了在更大 N/更长 budget 上复核这个结论，不是已经认定 QD 赢。详见 [`README.md`](README.md) 「🎯 验证结果」。
 

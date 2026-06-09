@@ -51,7 +51,7 @@ INITIAL = (
 # n=None means "all items in the split". Overridable on the CLI.
 PRESETS = {
     "preflight": {"n": 2, "eval_budget": 6, "k": 4},
-    "full": {"n": None, "eval_budget": 12, "k": 4},
+    "full": {"n": None, "eval_budget": 24, "k": 4},
 }
 
 
@@ -130,7 +130,7 @@ def preflight_checks(plan: Plan) -> bool:
     if plan.mode == "full":
         print(f"  coverage = ALL {n_resolved} test tasks（全量，非子集）；搜索深度 = {plan.eval_budget} evals/臂")
         if plan.eval_budget <= 12:
-            print("  注意：深度 12 与小验证同档（浅搜索）；--full 已覆盖全部题目，"
+            print(f"  注意：深度 {plan.eval_budget} 较浅（≤12，与小验证同档）；"
                   "要更深搜索用 --eval-budget 提高（成本/时间随之线性增长）。")
     return all_ok
 

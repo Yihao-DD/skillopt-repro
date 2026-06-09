@@ -41,7 +41,7 @@ copy .env.example .env        # 填 endpoint/key/model —— 换 API 的唯一�
 .venv\Scripts\python.exe scripts\run_experiment.py --preflight   # 先 2 题冒烟，确认调通你的 API
 .venv\Scripts\python.exe scripts\run_experiment.py --full        # 全量 N=280，K=1 贪心 vs K=4 QD，等预算
 ```
-- launcher 自动：冻结 target（temp=0+seed=42）/ optimizer temp=0.8 + 两臂共享同一 baseline 与等昂贵预算（`eval_budget=12`/臂）+ 写 `runs/full/summary.json`（含 verdict、**不含 key**）。
+- launcher 自动：冻结 target（temp=0+seed=42）/ optimizer temp=0.8 + 两臂共享同一 baseline 与等昂贵预算（`eval_budget=24`/臂）+ 写 `runs/full/summary.json`（含 verdict、**不含 key**）。
 - 规模/预算旋钮（`--n` / `--eval-budget` / `--k`）见 `LOCAL_ONLY.md §5`。
 - 尚未做（S16 加固）：clean-tree 断言 / 整树哈希 / `run_provenance.json`。当前完整性保证 = zip 的 sha256。
 
