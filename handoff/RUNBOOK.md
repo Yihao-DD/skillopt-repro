@@ -4,7 +4,7 @@
 >
 > 📦 **数据已随 zip 自带**（`SkillOpt/data/spreadsheetbench_*`）——**无需下载、无需联网、无需物化**。GitHub clone 缺哪些件、怎么补，见 `LOCAL_ONLY.md`。
 >
-> 🏷️ **如果你用 agent（Codex/Claude）操作**：每句 prompt 前加 `在公司，`，它就会进 runs-only 模式（只跑不改）。详见 `PROCESS.md §9`。
+> 🏷️ **如果你用 agent（Codex/Claude）操作**：每句 prompt 前加 `在公司，`，它就会进 runs-only 模式（只跑不改）。详见 `PROCESS.md §9`。公司 agent 的**完整启动 prompt**见 `handoff/COMPANY_PROMPT.md`（operator 手动发给 agent）。
 
 ---
 

@@ -7,7 +7,7 @@ which are SECURITY-critical: ``.env`` must never enter the release zip.
 import pytest
 
 from scripts.make_bundle import _included
-from scripts.run_experiment import PRESETS, build_parser, main, resolve_plan
+from scripts.run_experiment import PRESETS, _out_dir, build_parser, main, resolve_plan
 
 
 def test_full_preset_uses_whole_split_and_equal_budget():
@@ -82,3 +82,16 @@ def test_main_requires_an_explicit_mode_flag():
     # A forgotten flag must NOT silently run partial — it must error out.
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_tag_routes_output_to_a_separate_dir():
+    # --tag keeps multi-API runs from overwriting each other.
+    import os
+    assert os.path.basename(_out_dir(resolve_plan(full=True))) == "full"
+    assert os.path.basename(_out_dir(resolve_plan(full=True, tag="deepseek"))) == "full-deepseek"
+
+
+def test_tag_rejects_path_chars():
+    # The tag becomes a dir name — reject anything that could escape runs/.
+    with pytest.raises(ValueError):
+        resolve_plan(full=True, tag="../etc")

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -63,6 +64,7 @@ class Plan:
     k: int             # K for the QD arm (K=1 arm is always run as the greedy baseline)
     workers: int
     max_tokens: int
+    tag: str | None = None   # optional run label -> runs/<mode>-<tag>/ (multi-API compare)
 
 
 def resolve_plan(
@@ -73,8 +75,11 @@ def resolve_plan(
     k: int | None = None,
     workers: int = 8,
     max_tokens: int = 4096,
+    tag: str | None = None,
 ) -> Plan:
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
+    if tag is not None and not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+        raise ValueError(f"--tag 只能含字母/数字/.-_（要拿来做目录名）: {tag!r}")
     mode = "full" if full else "preflight"
     base = PRESETS[mode]
     return Plan(
@@ -84,6 +89,7 @@ def resolve_plan(
         k=k if k is not None else base["k"],
         workers=workers,
         max_tokens=max_tokens,
+        tag=tag,
     )
 
 
@@ -107,6 +113,12 @@ def _data_paths() -> tuple[str, str]:
     return items_json, data_root
 
 
+def _out_dir(plan: Plan) -> str:
+    """Run output dir; --tag separates multi-API runs (runs/full-deepseek vs runs/full-gpt)."""
+    sub = plan.mode if not plan.tag else f"{plan.mode}-{plan.tag}"
+    return os.path.join(ROOT, "runs", sub)
+
+
 def preflight_checks(plan: Plan) -> bool:
     """Print PASS/FAIL for everything a real run needs; return True iff all green."""
     items_json, data_root = _data_paths()
@@ -127,6 +139,7 @@ def preflight_checks(plan: Plan) -> bool:
             n_resolved = len(json.load(fh))
     print(f"  resolved N (tasks per arm) = {n_resolved if n_resolved is not None else '<needs items.json>'}")
     print(f"  expensive evals per arm    = {plan.eval_budget}   (K=1 greedy vs K={plan.k} QD, equal budget)")
+    print(f"  output dir = runs/{os.path.basename(_out_dir(plan))}/")
     if plan.mode == "full":
         print(f"  coverage = ALL {n_resolved} test tasks（全量，非子集）；搜索深度 = {plan.eval_budget} evals/臂")
         if plan.eval_budget <= 12:
@@ -164,7 +177,7 @@ def run(plan: Plan) -> dict:
     items = load_items(items_json)
     if plan.n is not None:
         items = items[: plan.n]
-    out = os.path.join(ROOT, "runs", plan.mode)
+    out = _out_dir(plan)
     print(f"frozen: {cfg} temp=0 seed=42")
     print(f"mode={plan.mode}  N={len(items)}  eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
 
@@ -234,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--k", type=int, default=None, help="QD 臂的 K（默认 4；K=1 臂始终作为贪心对照）")
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--max-tokens", type=int, default=4096)
+    p.add_argument("--tag", default=None, help="本次运行标签 → 写到 runs/<mode>-<tag>/（多 API 对比时分目录，不互相覆盖）")
     p.add_argument("--dry-run", action="store_true", help="只解析计划 + 检查 fork/数据/key，不调模型、不花钱")
     return p
 
@@ -245,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("必须指定 --full（全量 280 题）或 --preflight（2 题冒烟）；不给默认值以防误跑成部分。")
     load_dotenv(ROOT)
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
-                        k=args.k, workers=args.workers, max_tokens=args.max_tokens)
+                        k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag)
     print(f"== QD-over-Skills · mode={plan.mode} ==")
     if args.dry_run:
         ok = preflight_checks(plan)

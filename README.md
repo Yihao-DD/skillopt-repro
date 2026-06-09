@@ -161,7 +161,7 @@ skillopt-repro/
 ├── README.md / PROCESS.md / REORG_PLAN.md / pyproject.toml / conftest.py   # 入口 / 流程 / 清单 / 包 / import
 ├── qd/                  # QD 核心实现 + adapter_skillopt + tests（见上「代码地图」）
 ├── QD-over-Skills/      # SPEC + 文件系统 PM（.tasks SSOT / decisions ADR-0001..0006 / BRIEF / OPEN_DECISIONS）
-├── handoff/            # 出站交付（RUNBOOK / RUN_REQUEST / FEEDBACK / RELEASES）
+├── handoff/            # 出站交付（COMPANY_PROMPT 公司 agent 启动 prompt / RUNBOOK / RUN_REQUEST / FEEDBACK / RELEASES）
 ├── tools/              # 数据物化 + 可行性/标定/验证脚本
 ├── configs/frozen/     # 冻结目标 provenance（temp/seed，红线 P2）
 ├── scripts/            # 公司一键全量入口 run_experiment + 发包 make_bundle（本次补齐）

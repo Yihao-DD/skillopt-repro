@@ -86,6 +86,7 @@ copy .env.example .env      # 然后编辑 .env
 | 每臂昂贵评估预算 | 24 | `--eval-budget 12`（降浅省钱）/ `48`（加深） |
 | QD 臂的 K | 4 | `--k 8` |
 | 并发 / 单次 token | 8 / 4096 | `--workers` / `--max-tokens` |
+| 输出分目录（多 API 对比） | `runs/full/` | `--tag deepseek` → `runs/full-deepseek/`（各 API 不互相覆盖） |
 
 **成本量级**（随 N × eval_budget × 你的 token 单价线性增长）：我方 DeepSeek 验证 N=20/budget=12 ≈ $0.7；全量 N=280/budget=24 ≈ 28× ≈ **~$20（DeepSeek 价）**。换更贵的模型按 token 单价等比放大。`--dry-run` + `--preflight` 先把风险压掉再上全量。
 
