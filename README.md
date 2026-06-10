@@ -155,6 +155,18 @@ test_loop_generation_path.py: test_edit_budget_follows_cosine_schedule_programma
 - **诚实结论**：当前规模/benchmark/模型下 **QD 不 work,贪心赢**。原因:探索薄（仅 2 格）、贪心没被困在局部最优、budget 短。**核心赌注（QD>贪心）未验证,小样本反对**（对照公司当初那个无效的 +7.1）。
 - **定论需全量测试**：更大 N + 更长 budget + 把「瞄准着采」（target-cell-conditioned variation，`qd/variation.py`）接进 `adapter.propose` 加厚探索 —— 当前 propose 只是单纯 reflect，QD **未在最强形态下测过**。
 
+### 全量定论（公司侧 · venus `qwen3.5-397b-a17b`，2026-06-09）— 详见 [`docs/RESULTS-venus-qwen35.md`](docs/RESULTS-venus-qwen35.md)
+`run_experiment.py --full` · SpreadsheetBench test 全集 **N=280** · 等预算 **24 evals/臂** · ~18.6h · fullrun-v4（sha 校对过）：
+
+| | baseline | K=1（贪心） | K=4（QD） |
+|---|---|---|---|
+| best hard | 0.404（113/280） | 0.579（162/280） | **0.600（168/280）** |
+| n_occupied / cross_cell | — | 1 / 0 | 2 / 1 |
+
+- **[Q1] 探索 = ✅**（QD 占 2 格）；**[Q2] 等预算 payoff = ✅** —— **QD 0.600 > 贪心 0.579（+2.1pts，多解 6 题）**，与上面小样本 DeepSeek 结论**翻转**。
+- v4 `--probe-descriptor` 起作用：该模型 8 题 baseline 散到 **6/16 格**（未塌缩，区别于早先 Qwen3-235b 那次空跑）。
+- **诚实边界**：单次 run、margin 小（6 题）、探索薄（2/6 格）、optimizer 随机（temp=0.8、种子未固定）→ **首个正向证据、非铁证**；硬化结论需多 seed 误差棒 / 提 budget 或 K。权威产物 = 回传包内 `summary.json`（321MB，未随仓库）。
+
 ## 布局（目录级）
 ```
 skillopt-repro/
