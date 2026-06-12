@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import random
 
-from tools.analyze_selection_generalization import split_half_replay
+from tools.analyze_selection_generalization import (
+    copeland_pick,
+    robust_pick_preview,
+    split_half_replay,
+)
 
 
 def _skill(ids, correct_ids):
@@ -39,6 +43,24 @@ def test_winners_curse_gap_positive_for_near_tied_pool():
     # argmax on half A among 5 near-tied skills: selection score must exceed
     # the same skill's holdout score on average (selection tax / winner's curse).
     assert res["arm"]["gap_mean"] > 0.01
+
+
+def test_copeland_pick_matches_argmax_under_strict_dominance():
+    ids = [str(i) for i in range(100)]
+    pool = {"x": _skill(ids, ids[:50]), "y": _skill(ids, ids[:70])}  # y ⊃ x: dominates every half
+    assert copeland_pick(pool, ids, n_splits=50, rng=random.Random(0)) == "y"
+
+
+def test_robust_pick_preview_deterministic_and_picks_sometimes_differ():
+    ids = [str(i) for i in range(100)]
+    arms = {"arm": _near_tied_pool(ids)}
+    a = robust_pick_preview(arms, n_trials=50, n_inner=40, seed=1)
+    b = robust_pick_preview(arms, n_trials=50, n_inner=40, seed=1)
+    assert a == b                                        # deterministic
+    r = a["arm"]
+    assert 0.0 <= r["copeland_hold_mean"] <= 1.0
+    assert 0.0 <= r["argmax_hold_mean"] <= 1.0
+    assert r["differ_rate"] > 0                          # near-tied pool: rules disagree sometimes
 
 
 def test_dominant_arm_margin_survives_holdout():

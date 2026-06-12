@@ -73,6 +73,72 @@ def split_half_replay(arms: dict, *, n_trials: int = 200, seed: int = 42) -> dic
     return res
 
 
+def copeland_pick(pool: dict, ids: list, *, n_splits: int = 100, rng: random.Random) -> str:
+    """Robust selection: the candidate that wins the most pairwise half-split
+    duels (Copeland) instead of the raw argmax. Ties break by full-ids mean,
+    then key — deterministic given the rng state."""
+    keys = sorted(pool)
+    if len(keys) == 1:
+        return keys[0]
+    half = len(ids) // 2
+    wins = {k: 0.0 for k in keys}
+    for _ in range(n_splits):
+        a_half = rng.sample(ids, half)
+        scores = {k: _mean_over(pool[k], a_half) for k in keys}
+        for i, ki in enumerate(keys):
+            for kj in keys[i + 1:]:
+                if scores[ki] > scores[kj]:
+                    wins[ki] += 1
+                elif scores[kj] > scores[ki]:
+                    wins[kj] += 1
+                else:
+                    wins[ki] += 0.5
+                    wins[kj] += 0.5
+    return max(keys, key=lambda k: (wins[k], _mean_over(pool[k], ids), k))
+
+
+def robust_pick_preview(arms: dict, *, n_trials: int = 200, n_inner: int = 100, seed: int = 42) -> dict:
+    """Nested split preview of the robust-selection rule (Z1 / M1 preview).
+
+    Outer trial: split ids into Sel/Hold halves. On the Sel half ONLY, pick the
+    final skill two ways — plain argmax vs Copeland over sub-splits of Sel —
+    then score both picks on the untouched Hold half. Equal information for
+    both rules; the Hold delta is the unbiased preview of the robust rule."""
+    ids = None
+    for pool in arms.values():
+        for sk in pool.values():
+            ids = set(sk) if ids is None else ids & set(sk)
+    if not ids:
+        raise ValueError("no common item ids across skills")
+    ids = sorted(ids)
+    half = len(ids) // 2
+    rng = random.Random(seed)
+    raw = {arm: {"argmax_hold": [], "copeland_hold": [], "differ": 0} for arm in arms}
+    for _ in range(n_trials):
+        perm = rng.sample(ids, len(ids))
+        sel, hold = perm[:half], perm[half:]
+        for arm, pool in arms.items():
+            am = max(sorted(pool), key=lambda k: (_mean_over(pool[k], sel), k))
+            cp = copeland_pick(pool, sel, n_splits=n_inner, rng=rng)
+            raw[arm]["argmax_hold"].append(_mean_over(pool[am], hold))
+            raw[arm]["copeland_hold"].append(_mean_over(pool[cp], hold))
+            if am != cp:
+                raw[arm]["differ"] += 1
+    res = {}
+    for arm, d in raw.items():
+        am_m = sum(d["argmax_hold"]) / n_trials
+        cp_m = sum(d["copeland_hold"]) / n_trials
+        res[arm] = {
+            "argmax_hold": d["argmax_hold"],
+            "copeland_hold": d["copeland_hold"],
+            "argmax_hold_mean": round(am_m, 6),
+            "copeland_hold_mean": round(cp_m, 6),
+            "delta_mean": round(cp_m - am_m, 6),
+            "differ_rate": round(d["differ"] / n_trials, 4),
+        }
+    return res
+
+
 def _load_pool(arm_dir: str) -> dict:
     pool = {}
     for p in glob.glob(os.path.join(arm_dir, "*", "results.jsonl")):
@@ -97,6 +163,8 @@ def main() -> None:
     ap.add_argument("--arms", default="k1,k4,k4rcv")
     ap.add_argument("--n-trials", type=int, default=500)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--robust-preview", action="store_true",
+                    help="Z1: nested-split preview of Copeland robust selection vs argmax (M1 预览)")
     args = ap.parse_args()
 
     arms = {}
@@ -113,6 +181,12 @@ def main() -> None:
         print(f"[{arm}] pool={r['pool_size']}  selection={r['selection_mean']:.4f}  "
               f"holdout={r['holdout_mean']:.4f}  gap={r['gap_mean']:+.4f}  "
               f"stability={r['stability']:.0%}  full_best={r['full_best']}")
+    if args.robust_preview:
+        prev = robust_pick_preview(arms, n_trials=args.n_trials, n_inner=100, seed=args.seed)
+        for arm, r in prev.items():
+            print(f"[robust-preview {arm}] argmax_hold={r['argmax_hold_mean']:.4f}  "
+                  f"copeland_hold={r['copeland_hold_mean']:.4f}  delta={r['delta_mean']:+.4f}  "
+                  f"picks_differ={r['differ_rate']:.0%}")
     names = list(res)
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
