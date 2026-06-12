@@ -169,10 +169,12 @@ def preflight_checks(plan: Plan) -> bool:
         print(f"  [{'OK ' if ok else 'FAIL'}] {label}: {shown}")
         all_ok = all_ok and ok
     n_resolved = plan.n
-    if plan.n is None and os.path.exists(items_json):
-        with open(items_json, encoding="utf-8") as fh:
+    gate_json = _sibling_split(items_json, "val") if plan.gate_split == "val" else items_json
+    if plan.n is None and os.path.exists(gate_json):
+        with open(gate_json, encoding="utf-8") as fh:
             n_resolved = len(json.load(fh))
-    print(f"  resolved N (tasks per arm) = {n_resolved if n_resolved is not None else '<needs items.json>'}")
+    print(f"  resolved N (tasks per arm, gate={plan.gate_split}) = "
+          f"{n_resolved if n_resolved is not None else '<needs items.json>'}")
     print(f"  expensive evals per arm    = {plan.eval_budget}   (K=1 greedy vs K={plan.k} QD, equal budget)")
     print(f"  output dir = runs/{os.path.basename(_out_dir(plan))}/")
     if plan.mode == "full":
@@ -254,7 +256,8 @@ def run(plan: Plan) -> dict:
     summary = {
         "created": datetime.now(timezone.utc).isoformat(),
         "plan": asdict(plan),
-        "tasks": [it["id"] for it in items],
+        "gate_tasks": [it["id"] for it in gate_items],   # 搜索/gate 实际用的题
+        "test_tasks": [it["id"] for it in items],        # 终评集（gate_split=test 时两者同集）
         "backend": cfg,  # endpoint + models, NO key
         "frozen": {"target_temperature": 0, "target_seed": 42, "optimizer_temperature": 0.8},
         "baseline_hard": base_score,
@@ -284,13 +287,18 @@ def run(plan: Plan) -> dict:
 
     if plan.gate_split == "val":
         # 三分割终评：gate 没见过的 test 全集上各跑一次 best（每臂一次昂贵 rollout）。
-        tp = make_producer(items=items, data_root=data_root, out_root=os.path.join(out, "test_eval"),
+        test_items = items[: plan.n] if plan.n is not None else items  # preflight 冒烟不许偷跑全量终评
+        tp = make_producer(items=test_items, data_root=data_root, out_root=os.path.join(out, "test_eval"),
                            workers=plan.workers, max_completion_tokens=plan.max_tokens)
         te = {"baseline": tp.score(INITIAL)}
         for arm_tag, res_arm in arm_results:
             te[arm_tag] = tp.score(res_arm.archive.best_skill)
         summary["test_eval"] = te
+        summary["test_eval_n"] = len(test_items)
         summary["verdict"]["q2_test_holdout"] = bool(te[f"k{plan.k}"] > te["k1"])
+        if rrcv is not None:
+            summary["verdict"]["q3_test_holdout_over_plain_qd"] = bool(te[f"k{plan.k}rcv"] > te[f"k{plan.k}"])
+            summary["verdict"]["q3_test_holdout_over_greedy"] = bool(te[f"k{plan.k}rcv"] > te["k1"])
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
