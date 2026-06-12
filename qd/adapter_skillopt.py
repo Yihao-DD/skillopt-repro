@@ -14,11 +14,32 @@ model-free.
 """
 from __future__ import annotations
 
-import hashlib
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from qd.ledger import LedgerEntry, RejectionLedger, skill_fingerprint
 from qd.loop import CandidateProducer
+
+_AXIS_LEVELS = ("很低", "较低", "较高", "很高")
+_NBINS = 4  # == qd.descriptor cell grid (cell = complexity_bin * 4 + op_density_bin)
+
+
+def _verbalize_cell(cell: int) -> str:
+    """AIM: turn a target cell into ADR-0006 axis language the optimizer can act on."""
+    row, col = (cell // _NBINS) % _NBINS, cell % _NBINS
+    return (f"瞄准行为格 {cell}：解法复杂度{_AXIS_LEVELS[row]}、"
+            f"spreadsheet 操作密度{_AXIS_LEVELS[col]}的实现风格。")
+
+
+def _flips(parent_results: list, cand_results: list, cap: int = 8) -> tuple:
+    """Per-task correctness flips (parent vs candidate), from already-paid rollouts."""
+    def _hardmap(results: list) -> dict:
+        return {str(r.get("id")): int(float(r.get("hard", 0)) > 0.5) for r in results}
+
+    pa, ca = _hardmap(parent_results), _hardmap(cand_results)
+    flips = [(tid, pa[tid], ca[tid]) for tid in sorted(pa.keys() & ca.keys()) if pa[tid] != ca[tid]]
+    flips.sort(key=lambda f: (f[2] - f[1], f[0]))  # regressions (对→错) first
+    return tuple(flips[:cap])
 
 
 def configure_deepseek(*, optimizer_model: str | None = None, target_model: str | None = None) -> dict:
@@ -47,7 +68,7 @@ def configure_deepseek(*, optimizer_model: str | None = None, target_model: str 
 
 
 def _skill_hash(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+    return skill_fingerprint(s)  # single hash source (qd.ledger) — same algo as before
 
 
 @dataclass
@@ -86,9 +107,37 @@ class SkillOptProducer:
             trajs.append({"code": code, "n_turns": r.get("n_turns", 1)})
         return trajs
 
-    def propose(self, skill: str, *, step: int, target_cell: int | None = None) -> dict:
+    def _enrich(self, e: LedgerEntry) -> LedgerEntry:
+        """Lazily attach per-task flips by diffing the already-paid rollout cache."""
+        if e.task_flips or e.parent_hash not in self._cache or e.cand_hash not in self._cache:
+            return e
+        return replace(e, task_flips=_flips(self._cache[e.parent_hash], self._cache[e.cand_hash]))
+
+    def _rcv_context(self, *, target_cell: int | None, ledger: "RejectionLedger | None") -> str:
+        """AVOID (ledger render + flips) + AIM (verbalized target cell), or ""."""
+        parts = []
+        if ledger is not None and len(ledger):
+            enriched = RejectionLedger(entries=[self._enrich(e) for e in ledger.entries])
+            parts.append(enriched.render())
+        guidance = []
+        if target_cell is not None:
+            guidance.append(_verbalize_cell(target_cell))
+        if parts:
+            guidance.append("不要重复上述被拒方向的同类编辑；优先提出与失败方向语义不同的修改。")
+        if guidance:
+            parts.append("== 指引 ==\n" + "\n".join(guidance))
+        return "\n".join(parts)
+
+    def propose(self, skill: str, *, step: int, target_cell: int | None = None,
+                ledger: "RejectionLedger | None" = None) -> dict:
         results = self._rollout(skill)
-        patches = self.adapter.reflect(results, skill, os.path.join(self.out_root, _skill_hash(skill)))
+        kwargs = {}
+        ctx = self._rcv_context(target_cell=target_cell, ledger=ledger)
+        if ctx:
+            # Upstream-blessed injection channel: reflect renders this under
+            # "## Previous Steps in This Epoch" — exactly the AVOID semantics.
+            kwargs["step_buffer_context"] = ctx
+        patches = self.adapter.reflect(results, skill, os.path.join(self.out_root, _skill_hash(skill)), **kwargs)
         edits: list = []
         for p in patches or []:
             if p and isinstance(p.get("patch"), dict):

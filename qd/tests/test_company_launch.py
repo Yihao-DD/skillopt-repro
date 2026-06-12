@@ -100,3 +100,10 @@ def test_tag_rejects_path_chars():
 def test_parser_accepts_probe_descriptor():
     args = build_parser().parse_args(["--probe-descriptor", "--probe-n", "5"])
     assert args.probe_descriptor and args.probe_n == 5
+
+
+def test_resolve_plan_rcv_flag_defaults_off_and_passes_through():
+    from scripts.run_experiment import resolve_plan
+
+    assert resolve_plan(full=True).rcv is False
+    assert resolve_plan(full=True, rcv=True).rcv is True

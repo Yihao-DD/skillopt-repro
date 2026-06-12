@@ -65,6 +65,7 @@ class Plan:
     workers: int
     max_tokens: int
     tag: str | None = None   # optional run label -> runs/<mode>-<tag>/ (multi-API compare)
+    rcv: bool = False        # third arm: K=k + rejection-ledger conditioning (ADR-0007)
 
 
 def resolve_plan(
@@ -76,6 +77,7 @@ def resolve_plan(
     workers: int = 8,
     max_tokens: int = 4096,
     tag: str | None = None,
+    rcv: bool = False,
 ) -> Plan:
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
     if tag is not None and not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
@@ -90,6 +92,7 @@ def resolve_plan(
         workers=workers,
         max_tokens=max_tokens,
         tag=tag,
+        rcv=rcv,
     )
 
 
@@ -190,16 +193,19 @@ def run(plan: Plan) -> dict:
     base_cell = descriptor(base_prod.probe(INITIAL)).cell
     print(f"baseline: hard={base_score}  cell={base_cell}")
 
-    def run_arm(k: int, tag: str):
+    def run_arm(k: int, tag: str, *, use_ledger: bool = False):
         res = run_search(k=k, baseline_skill=INITIAL, baseline_score=base_score,
                          eval_budget=plan.eval_budget, producer=producer(tag),
-                         baseline_cell=(0 if k == 1 else base_cell), max_lr=4, min_lr=2)
+                         baseline_cell=(0 if k == 1 else base_cell), max_lr=4, min_lr=2,
+                         use_ledger=use_ledger)
         print(f"[{tag}] best={res.best_score} n_occupied={res.n_occupied} "
-              f"cross_cell={res.cross_cell_pickups} evals={res.expensive_evals}")
+              f"cross_cell={res.cross_cell_pickups} evals={res.expensive_evals}"
+              + (f" ledger={len(res.ledger)}" if res.ledger is not None else ""))
         return res
 
     r1 = run_arm(1, "k1")
     rk = run_arm(plan.k, f"k{plan.k}")
+    rrcv = run_arm(plan.k, f"k{plan.k}rcv", use_ledger=True) if plan.rcv else None
 
     try:
         from skillopt.model import get_token_summary
@@ -223,6 +229,14 @@ def run(plan: Plan) -> dict:
         },
         "tokens": tokens,
     }
+    if rrcv is not None:
+        summary[f"k{plan.k}_rcv"] = {
+            **_arm_summary(rrcv),
+            "ledger_entries": len(rrcv.ledger) if rrcv.ledger is not None else 0,
+            "precheck_skips": rrcv.precheck_skips,
+        }
+        summary["verdict"]["q3_rcv_payoff_over_plain_qd"] = bool(rrcv.best_score > rk.best_score)
+        summary["verdict"]["q3_rcv_payoff_over_greedy"] = bool(rrcv.best_score > r1.best_score)
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
@@ -233,6 +247,10 @@ def run(plan: Plan) -> dict:
     print(f"  K={plan.k} best = {rk.best_score}  n_occupied={rk.n_occupied}  cross_cell={rk.cross_cell_pickups}")
     print(f"  [Q1] QD explores (n_occupied>1):              {summary['verdict']['q1_qd_explores']}")
     print(f"  [Q2] QD payoff (K>1 best > K=1, equal budget): {summary['verdict']['q2_qd_payoff_at_equal_budget']}")
+    if rrcv is not None:
+        print(f"  K={plan.k}+RCV best = {rrcv.best_score}  n_occupied={rrcv.n_occupied}  "
+              f"ledger={len(rrcv.ledger) if rrcv.ledger is not None else 0}  precheck_skips={rrcv.precheck_skips}")
+        print(f"  [Q3] RCV payoff (RCV > plain QD, equal budget): {summary['verdict']['q3_rcv_payoff_over_plain_qd']}")
     if rk.n_occupied <= 1:
         print("  ⚠️ QD 臂只占 1 格 → descriptor 在此模型上塌缩，QD 退化成贪心、本次对比无意义；"
               "先跑 --probe-descriptor 复查并回我方重标定。")
@@ -295,6 +313,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--max-tokens", type=int, default=4096)
     p.add_argument("--tag", default=None, help="本次运行标签 → 写到 runs/<mode>-<tag>/（多 API 对比时分目录，不互相覆盖）")
+    p.add_argument("--rcv", action="store_true",
+                   help="加跑第三臂：K=k + 拒绝账本条件化变异（ADR-0007；等预算，三臂消融 贪心/QD/QD+RCV）")
     p.add_argument("--probe-descriptor", action="store_true",
                    help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
     p.add_argument("--probe-n", type=int, default=8, help="--probe-descriptor 的题数（默认 8）")
@@ -314,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.full and not args.preflight:
         parser.error("必须指定 --full（全量 280 题）/ --preflight（2 题冒烟）/ --probe-descriptor（descriptor 探针）。")
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
-                        k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag)
+                        k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag,
+                        rcv=args.rcv)
     print(f"== QD-over-Skills · mode={plan.mode} ==")
     if args.dry_run:
         ok = preflight_checks(plan)

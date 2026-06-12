@@ -13,7 +13,7 @@
 2. **loop 集成**：`run_search(..., use_ledger=False, pre_check=None)` 默认全关；**k==1 强制关**（红线 C0：K=1 逐步 == SkillOpt，39 测试不许动）。开启时每次 `archive.update` 后 append；`ledger` 仅在非 None 时作为 kwarg 传 `producer.propose`（现有 fake/测试零回归）。`ProposedCandidate` 增加 `patch` 字段（账本需记录"试过什么编辑"；现 patch 在 apply 后即丢）。
 3. **投机预检**（独立开关，默认关）：插槽在 `deduplicate_by_behavior` 之后、昂贵 score 之前（与 dedup 同类：花钱前的便宜过滤器）。`pre_check(pc, ledger) -> bool`，False 则跳过昂贵评估。**四护栏**：① fail-open（预检报错→照常评估）；② 不许全跳（一步内全 SKIP 时强制放行一个，防 stall 计数耗尽导致等预算花不满）；③ 保守契约（prompt 要求指名匹配的具体失败条目才许 SKIP）；④ 全量记录 `precheck_skips` 进 `SearchResult`/summary.json（事后可离线补评校准误杀率）。
 4. **adapter**：`SkillOptProducer.propose(ledger=)` 构造 `extra_context` 两节——**AIM**（用 ADR-0006 轴语义把 `target_cell` 文本化："瞄准更高操作密度/中等复杂度"，顺手完成 T004）+ **AVOID**（渲染账本；用 rollout `_cache` diff parent vs 被拒候选的每题正误 → 翻转明细，**零额外 LLM 调用零额外 rollout**）。
-5. **fork 第 3 commit**：`reflect` 加可选参数 `extra_context: str|None = None`，注入 reflect prompt 的「先前尝试与结果」段；默认 None 与上游逐字节等价（与 openai-compat、角色温度两 commit 同模式），记 `handoff/RELEASES.md`。
+5. ~~fork 第 3 commit：`reflect` 加 `extra_context` 参数~~ **作废（2026-06-12 实现时发现）**：上游 `reflect` 已有透传通道 `step_buffer_context`，文档原文 = "Unified summary of previous steps (failure patterns + rejected edits)"，注入为 `## Previous Steps in This Epoch`——语义与 AVOID 完全一致（上游为自家 step-buffer 动量设计；我们受控对比 slow_update/meta=OFF，该通道空闲无碰撞）。**零 fork 改动，fork 保持 `0948d2d`。**
 6. **实验面**：`run_experiment.py` 增第三臂 `--rcv`（K=4+账本）；`--rcv-precheck`、`--rcv-distill`（B-flag：每次拒绝一次便宜调用蒸馏一行教训存 `entry.lesson`，render 优先用、恒附证据行）各自独立开关，默认关。
 
 ## 理由
