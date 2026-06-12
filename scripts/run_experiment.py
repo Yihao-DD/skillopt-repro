@@ -233,6 +233,7 @@ def run(plan: Plan) -> dict:
         summary[f"k{plan.k}_rcv"] = {
             **_arm_summary(rrcv),
             "ledger_entries": len(rrcv.ledger) if rrcv.ledger is not None else 0,
+            "ledger_note": "ledger_entries 含缓存命中的判决；expensive_evals 只计缓存未命中",
             "precheck_skips": rrcv.precheck_skips,
         }
         summary["verdict"]["q3_rcv_payoff_over_plain_qd"] = bool(rrcv.best_score > rk.best_score)
