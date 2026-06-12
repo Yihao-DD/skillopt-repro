@@ -66,6 +66,8 @@ class Plan:
     max_tokens: int
     tag: str | None = None   # optional run label -> runs/<mode>-<tag>/ (multi-API compare)
     rcv: bool = False        # third arm: K=k + rejection-ledger conditioning (ADR-0007)
+    gate_split: str = "test"  # "test"=旧行为(选择集==报告集) / "val"=三分割(gate 在 val、终评在 test)
+    seed: int = 42            # optimizer seed (记录+设 OPTIMIZER_SEED env；fork 侧支持待第4个 fork commit)
 
 
 def resolve_plan(
@@ -78,10 +80,14 @@ def resolve_plan(
     max_tokens: int = 4096,
     tag: str | None = None,
     rcv: bool = False,
+    gate_split: str = "test",
+    seed: int = 42,
 ) -> Plan:
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
     if tag is not None and not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
         raise ValueError(f"--tag 只能含字母/数字/.-_（要拿来做目录名）: {tag!r}")
+    if gate_split not in ("test", "val"):
+        raise ValueError(f"--gate-split 只能是 test 或 val: {gate_split!r}")
     mode = "full" if full else "preflight"
     base = PRESETS[mode]
     return Plan(
@@ -93,7 +99,33 @@ def resolve_plan(
         max_tokens=max_tokens,
         tag=tag,
         rcv=rcv,
+        gate_split=gate_split,
+        seed=seed,
     )
+
+
+def _sibling_split(items_json: str, split: str) -> str:
+    """Path of a sibling split's items.json (…/spreadsheetbench_split/<split>/items.json)."""
+    return os.path.join(os.path.dirname(os.path.dirname(items_json)), split, "items.json")
+
+
+def persist_archive(archive, outdir: str) -> list[str]:
+    """Write the arm's best skill + every occupied elite's skill text to disk.
+
+    Until now only hashes/outcomes were persisted — the skill TEXTS died with the
+    process, blocking post-hoc analysis (e.g. archive distillation M2)."""
+    os.makedirs(outdir, exist_ok=True)
+    paths = []
+    best = os.path.join(outdir, "best_skill.md")
+    with open(best, "w", encoding="utf-8") as fh:
+        fh.write(archive.best_skill)
+    paths.append(best)
+    for cell in archive.occupied_cells():
+        p = os.path.join(outdir, f"elite_cell{cell}.md")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(archive.elite(cell).skill)
+        paths.append(p)
+    return paths
 
 
 def load_dotenv(root: str) -> None:
@@ -175,17 +207,23 @@ def run(plan: Plan) -> dict:
     from qd.descriptor import descriptor
     from qd.loop import run_search
 
+    os.environ["OPTIMIZER_SEED"] = str(plan.seed)  # 记录意图；fork 侧读取待第4个 fork commit
     cfg = configure_deepseek()  # raises if AZURE_OPENAI_API_KEY missing
     items_json, data_root = _data_paths()
-    items = load_items(items_json)
+    items = load_items(items_json)            # test split（终评集）
+    gate_items = items
+    if plan.gate_split == "val":
+        gate_items = load_items(_sibling_split(items_json, "val"))
     if plan.n is not None:
-        items = items[: plan.n]
+        gate_items = gate_items[: plan.n]
     out = _out_dir(plan)
-    print(f"frozen: {cfg} temp=0 seed=42")
-    print(f"mode={plan.mode}  N={len(items)}  eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
+    print(f"frozen: {cfg} temp=0 seed=42  optimizer_seed={plan.seed}")
+    print(f"mode={plan.mode}  gate_split={plan.gate_split}  N_gate={len(gate_items)}"
+          f"{'  N_test=' + str(len(items)) if plan.gate_split == 'val' else ''}"
+          f"  eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
 
     def producer(tag):
-        return make_producer(items=items, data_root=data_root, out_root=os.path.join(out, tag),
+        return make_producer(items=gate_items, data_root=data_root, out_root=os.path.join(out, tag),
                              workers=plan.workers, max_completion_tokens=plan.max_tokens)
 
     base_prod = producer("baseline")
@@ -238,6 +276,21 @@ def run(plan: Plan) -> dict:
         }
         summary["verdict"]["q3_rcv_payoff_over_plain_qd"] = bool(rrcv.best_score > rk.best_score)
         summary["verdict"]["q3_rcv_payoff_over_greedy"] = bool(rrcv.best_score > r1.best_score)
+
+    # Skill texts to disk (post-hoc analysis / archive distillation M2 need them).
+    arm_results = [("k1", r1), (f"k{plan.k}", rk)] + ([(f"k{plan.k}rcv", rrcv)] if rrcv is not None else [])
+    for arm_tag, res_arm in arm_results:
+        persist_archive(res_arm.archive, os.path.join(out, arm_tag))
+
+    if plan.gate_split == "val":
+        # 三分割终评：gate 没见过的 test 全集上各跑一次 best（每臂一次昂贵 rollout）。
+        tp = make_producer(items=items, data_root=data_root, out_root=os.path.join(out, "test_eval"),
+                           workers=plan.workers, max_completion_tokens=plan.max_tokens)
+        te = {"baseline": tp.score(INITIAL)}
+        for arm_tag, res_arm in arm_results:
+            te[arm_tag] = tp.score(res_arm.archive.best_skill)
+        summary["test_eval"] = te
+        summary["verdict"]["q2_test_holdout"] = bool(te[f"k{plan.k}"] > te["k1"])
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
@@ -316,6 +369,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tag", default=None, help="本次运行标签 → 写到 runs/<mode>-<tag>/（多 API 对比时分目录，不互相覆盖）")
     p.add_argument("--rcv", action="store_true",
                    help="加跑第三臂：K=k + 拒绝账本条件化变异（ADR-0007；等预算，三臂消融 贪心/QD/QD+RCV）")
+    p.add_argument("--gate-split", choices=("test", "val"), default="test",
+                   help="val=三分割：gate 在 val(40题) 上打分(便宜7倍)、终评在 test(280) 上各臂一次（消选择税）")
+    p.add_argument("--seed", type=int, default=42, help="optimizer seed（记录进 summary + 设 OPTIMIZER_SEED）")
     p.add_argument("--probe-descriptor", action="store_true",
                    help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
     p.add_argument("--probe-n", type=int, default=8, help="--probe-descriptor 的题数（默认 8）")
@@ -336,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("必须指定 --full（全量 280 题）/ --preflight（2 题冒烟）/ --probe-descriptor（descriptor 探针）。")
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
                         k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag,
-                        rcv=args.rcv)
+                        rcv=args.rcv, gate_split=args.gate_split, seed=args.seed)
     print(f"== QD-over-Skills · mode={plan.mode} ==")
     if args.dry_run:
         ok = preflight_checks(plan)

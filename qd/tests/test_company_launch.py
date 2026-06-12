@@ -107,3 +107,36 @@ def test_resolve_plan_rcv_flag_defaults_off_and_passes_through():
 
     assert resolve_plan(full=True).rcv is False
     assert resolve_plan(full=True, rcv=True).rcv is True
+
+
+def test_resolve_plan_gate_split_and_seed_fields():
+    import pytest
+    from scripts.run_experiment import resolve_plan
+
+    p = resolve_plan(full=True)
+    assert p.gate_split == "test" and p.seed == 42      # defaults: current behavior
+    p2 = resolve_plan(full=True, gate_split="val", seed=7)
+    assert p2.gate_split == "val" and p2.seed == 7
+    with pytest.raises(ValueError):
+        resolve_plan(full=True, gate_split="bogus")
+
+
+def test_sibling_split_path_resolution():
+    import os
+    from scripts.run_experiment import _sibling_split
+
+    p = os.path.join("SkillOpt", "data", "spreadsheetbench_split", "test", "items.json")
+    assert _sibling_split(p, "val") == os.path.join(
+        "SkillOpt", "data", "spreadsheetbench_split", "val", "items.json")
+
+
+def test_persist_archive_writes_best_and_all_elites(tmp_path):
+    from qd.archive import Archive
+    from scripts.run_experiment import persist_archive
+
+    a = Archive(k=16, baseline_skill="BASE", baseline_score=0.4, baseline_cell=0)
+    a.update("CAND", 0.6, step=1, cell=5)
+    persist_archive(a, str(tmp_path))
+    assert (tmp_path / "best_skill.md").read_text(encoding="utf-8") == "CAND"
+    assert (tmp_path / "elite_cell0.md").read_text(encoding="utf-8") == "BASE"
+    assert (tmp_path / "elite_cell5.md").read_text(encoding="utf-8") == "CAND"
