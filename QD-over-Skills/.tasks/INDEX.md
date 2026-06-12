@@ -33,6 +33,15 @@
 | T008 | Phase-1 集成实验（SpreadsheetBench，**同预算**逃逸） | TODO | T004–T007,BLOCKER-1 | 续爬 vs SkillOpt plateau |
 | **GATE-1** | 同预算逃逸复现了吗？→ 写 ADR | TODO | T008 | |
 
+## Phase 1R — 拒绝信息回收（RCV，2026-06-12 起，ADR-0007）
+
+| ID | 任务 | 状态 | 依赖 | 验收要点 |
+|----|------|------|------|----------|
+| T014 | RCV 实现：`qd/ledger.py` + loop 集成（use_ledger/pre_check）+ adapter extra_context + fork reflect 参数 | IN_PROGRESS | T004–T007, ADR-0007 | 零 API 测试全绿；K=1 39 测试不动；预检四护栏落地 |
+| T015 | 回传包统计加固工具：per-item 配对检验（bootstrap/McNemar）+ best-so-far 曲线 | IN_PROGRESS | — | 零 API；合成数据单测；venus 包到手即出数（⚠️ 包不在本机，待 operator 定位） |
+| T016 | searchqa 旧 run 审计 | BLOCKED | 公司回传 `returned-searchqa-audit.zip`（`handoff/RETURN_REQUEST-searchqa-audit.md` 已发） | n_occupied>1？等预算？→ 抢救 / 重跑 / 判废 |
+| T017 | RCV 真钱验证（T1 烟测→T2 N=20 对抗→T3 全量三臂→T4 多seed，自费 DeepSeek） | TODO | T014, `.env` DeepSeek key | 见 ADR-0007 验证计划；T2 看 QD 最不利设定缩差 |
+
 ## Phase 2 — 冲刺
 
 | ID | 任务 | 状态 | 依赖 | 验收要点 |

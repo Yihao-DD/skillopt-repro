@@ -37,6 +37,7 @@ from skillopt.optimizer.scheduler import build_scheduler  # pure (math only)
 from qd.archive import Archive
 from qd.budget import BehaviorCandidate, EvalCounter, deduplicate_by_behavior
 from qd.descriptor import descriptor
+from qd.ledger import LedgerEntry, RejectionLedger, skill_fingerprint
 from qd.scheduler import choose_parent_cell
 
 Patch = dict
@@ -49,6 +50,22 @@ def _default_rank_and_select(skill: str, patch: Patch, *, max_edits: int, update
     from skillopt.optimizer.clip import rank_and_select
 
     return rank_and_select(skill, patch, max_edits, update_mode=update_mode)
+
+
+def _patch_summary(patch: Patch | None) -> str:
+    """Compact, schema-agnostic summary of the tried direction (ledger headline)."""
+    edits = (patch or {}).get("edits", []) or []
+    parts = []
+    for e in edits[:2]:
+        if isinstance(e, dict):
+            text = e.get("text") or e.get("code") or " ".join(str(v) for v in e.values())
+        else:
+            text = e
+        parts.append(str(text)[:60])
+    out = "; ".join(parts)
+    if len(edits) > 2:
+        out += f"; …(+{len(edits) - 2})"
+    return out
 
 
 @dataclass
@@ -77,6 +94,7 @@ class ProposedCandidate:
     edit_budget: int
     n_edits: int
     parent_cell: int
+    patch: Patch | None = None   # the selected patch (RCV ledger records the direction)
 
 
 @dataclass(frozen=True)
@@ -105,6 +123,8 @@ class SearchResult:
     history: list[StepRecord] = field(default_factory=list)
     n_proposed: int = 0          # cheap proposals generated (>= expensive_evals when dedup fires)
     cross_cell_pickups: int = 0  # accepted candidates whose target cell != parent cell
+    precheck_skips: int = 0      # RCV pre_check skipped candidates (never spent budget)
+    ledger: RejectionLedger | None = None  # RCV outcome record (None when off / K=1)
 
     @property
     def n_occupied(self) -> int:
@@ -133,10 +153,15 @@ def _propose_candidate(
     step: int,
     target_cell: int | None = None,
     update_mode: str = "patch",
+    ledger: RejectionLedger | None = None,
 ) -> ProposedCandidate:
     """Cheap stage: propose → ``rank_and_select`` (to ``edit_budget``) → apply →
-    behavior cell (K>1). No expensive eval here."""
-    patch = producer.propose(skill, step=step, target_cell=target_cell)
+    behavior cell (K>1). No expensive eval here. The ledger kwarg is forwarded to
+    ``propose`` ONLY when present, so pre-RCV producers keep their old contract."""
+    if ledger is not None:
+        patch = producer.propose(skill, step=step, target_cell=target_cell, ledger=ledger)
+    else:
+        patch = producer.propose(skill, step=step, target_cell=target_cell)
     selected = producer.rank_and_select(skill, patch, max_edits=edit_budget, update_mode=update_mode)
     cand_skill = producer.apply(skill, selected)
     if k == 1 or producer.probe is None:
@@ -148,6 +173,7 @@ def _propose_candidate(
     return ProposedCandidate(
         skill=cand_skill, b=tuple(b), cell=cell, edit_budget=edit_budget,
         n_edits=len(selected.get("edits", [])), parent_cell=parent_cell,
+        patch=selected,
     )
 
 
@@ -205,22 +231,34 @@ def run_search(
     dedup_epsilon: float = 0.0,
     parent_gamma: float = 0.1,
     parent_beta: float = 0.1,
+    use_ledger: bool = False,
+    pre_check: Optional[Callable[[ProposedCandidate, RejectionLedger], bool]] = None,
 ) -> SearchResult:
     """Run one arm until the shared counter spends ``eval_budget`` expensive evals.
 
     Both arms called with the same ``eval_budget`` consume exactly that many
     expensive evaluations (equal-budget red line). The cosine schedule anneals the
     edit budget over this arm's step horizon (``eval_budget // cps``).
+
+    RCV (ADR-0007): ``use_ledger=True`` records every gate outcome in a
+    :class:`~qd.ledger.RejectionLedger` and forwards it to ``producer.propose``.
+    ``pre_check(pc, ledger) -> bool`` may veto a candidate BEFORE the expensive
+    eval (False = skip; fail-open on exceptions; a step never skips ALL
+    survivors, so the equal budget always fills). K=1 IGNORES both flags —
+    red line C0: the K=1 arm stays byte-for-byte SkillOpt.
     """
     if eval_budget < 1:
         raise ValueError("eval_budget must be >= 1")
+    if k > 1 and pre_check is not None and not use_ledger:
+        raise ValueError("pre_check requires use_ledger=True (it vets against the ledger)")
     counter = counter if counter is not None else EvalCounter()
     cps = candidates_per_step if candidates_per_step is not None else (1 if k == 1 else k)
     grid_cells = 1 if k == 1 else 16  # K=1 == single-cell SkillOpt; K>1 = full descriptor grid (nbins=4 -> 16)
     total_steps = max(1, eval_budget // cps)
     scheduler = build_scheduler("cosine", max_lr=max_lr, min_lr=min_lr, total_steps=total_steps)
     archive = Archive(k=grid_cells, baseline_skill=baseline_skill, baseline_score=baseline_score, baseline_cell=baseline_cell)
-    result = SearchResult(arm=("K=1" if k == 1 else f"K={k}"), archive=archive, counter=counter)
+    ledger = RejectionLedger() if (use_ledger and k > 1) else None
+    result = SearchResult(arm=("K=1" if k == 1 else f"K={k}"), archive=archive, counter=counter, ledger=ledger)
     cell_visits: dict[int, int] = {}
 
     step = 0
@@ -242,10 +280,12 @@ def run_search(
         else:
             parent_cell = _select_parent_cell(archive, cell_visits, gamma=parent_gamma, beta=parent_beta)
             cell_visits[parent_cell] = cell_visits.get(parent_cell, 0) + 1
-            parent = archive.elite(parent_cell).skill
+            parent_elite = archive.elite(parent_cell)
+            parent, parent_score = parent_elite.skill, parent_elite.score
             proposals = [
                 _propose_candidate(parent, parent_cell=parent_cell, edit_budget=edit_budget,
-                                   producer=producer, k=k, step=step, update_mode=update_mode)
+                                   producer=producer, k=k, step=step, update_mode=update_mode,
+                                   ledger=ledger)
                 for _ in range(cps)
             ]
             result.n_proposed += len(proposals)
@@ -253,10 +293,23 @@ def run_search(
             survivors = deduplicate_by_behavior(
                 [BehaviorCandidate(skill=p.skill, b=p.b, cell=p.cell) for p in proposals], dedup_epsilon
             )
-            for bc in survivors:
+            evaluated_this_step = 0
+            for idx, bc in enumerate(survivors):
                 if counter.expensive_evals >= eval_budget:
                     break
                 pc = by_skill[bc.skill]
+                if pre_check is not None and ledger is not None:
+                    try:
+                        skip = not bool(pre_check(pc, ledger))
+                    except Exception:
+                        skip = False  # fail-open: infrastructure must never lose a candidate
+                    # Never skip ALL survivors in a step (the equal budget must fill).
+                    if skip and evaluated_this_step == 0 and idx == len(survivors) - 1:
+                        skip = False
+                    if skip:
+                        result.precheck_skips += 1
+                        continue
+                evaluated_this_step += 1
                 score = _score_proposed(pc, producer=producer, counter=counter, selection_size=selection_size)
                 upd = archive.update(pc.skill, score, step=step, cell=pc.cell)
                 cr = CandidateResult(skill=pc.skill, score=score, edit_budget=pc.edit_budget,
@@ -264,6 +317,13 @@ def run_search(
                 result.history.append(StepRecord(step=step, action=upd.action, cell=upd.cell, candidate=cr))
                 if upd.action == "accept" and pc.cell != pc.parent_cell:
                     result.cross_cell_pickups += 1
+                if ledger is not None:
+                    ledger.append(LedgerEntry(
+                        step=step, action=upd.action, score=score, parent_score=parent_score,
+                        cell=pc.cell, parent_cell=pc.parent_cell, b=pc.b,
+                        n_edits=pc.n_edits, edits_summary=_patch_summary(pc.patch),
+                        parent_hash=skill_fingerprint(parent), cand_hash=skill_fingerprint(pc.skill),
+                    ))
 
         # Spend the FULL equal budget: tolerate unproductive (all-cache-hit) steps
         # by resampling; give up only after several consecutive stalls.
