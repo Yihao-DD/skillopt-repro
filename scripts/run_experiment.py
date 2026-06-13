@@ -68,6 +68,7 @@ class Plan:
     rcv: bool = False        # third arm: K=k + rejection-ledger conditioning (ADR-0007)
     gate_split: str = "test"  # D_sel gate 集: test=旧合并(gate==report) / val=原文 selection / train / trainval
     gen_split: str = "same"   # D_tr 生成集: same=与 gate 同集(合并/旧行为) / train=原文协议(配 gate=val 即 Eq2/3)
+    num_epochs: int = 1       # 原文 §3.6 epoch 数: 1=无 slow update(旧行为) / 4=原文默认(每 epoch 末 slow update)
     seed: int = 42            # optimizer seed (记录+设 OPTIMIZER_SEED env；fork 侧支持待第4个 fork commit)
 
 
@@ -83,6 +84,7 @@ def resolve_plan(
     rcv: bool = False,
     gate_split: str = "test",
     gen_split: str = "same",
+    num_epochs: int = 1,
     seed: int = 42,
 ) -> Plan:
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
@@ -105,6 +107,7 @@ def resolve_plan(
         rcv=rcv,
         gate_split=gate_split,
         gen_split=gen_split,
+        num_epochs=num_epochs,
         seed=seed,
     )
 
@@ -271,7 +274,7 @@ def run(plan: Plan) -> dict:
         res = run_search(k=k, baseline_skill=INITIAL, baseline_score=base_score,
                          eval_budget=plan.eval_budget, producer=producer(tag),
                          baseline_cell=(0 if k == 1 else base_cell), max_lr=4, min_lr=2,
-                         use_ledger=use_ledger)
+                         use_ledger=use_ledger, num_epochs=plan.num_epochs)
         print(f"[{tag}] best={res.best_score} n_occupied={res.n_occupied} "
               f"cross_cell={res.cross_cell_pickups} evals={res.expensive_evals}"
               + (f" ledger={len(res.ledger)}" if res.ledger is not None else ""))
@@ -418,6 +421,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gen-split", choices=("same", "val", "train", "trainval"), default="same",
                    help="D_tr 生成集：原文协议用 --gen-split train --gate-split val（Eq2/3 三集分离）；same=与 gate 同集(旧合并)")
     p.add_argument("--seed", type=int, default=42, help="optimizer seed（记录进 summary + 设 OPTIMIZER_SEED）")
+    p.add_argument("--num-epochs", type=int, default=1,
+                   help="原文 §3.6 epoch 数：1=无 slow update(旧)；4=原文默认(每 epoch 末跨 epoch slow update,完全忠于原文)")
     p.add_argument("--probe-descriptor", action="store_true",
                    help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
     p.add_argument("--probe-n", type=int, default=8, help="--probe-descriptor 的题数（默认 8）")
@@ -438,7 +443,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("必须指定 --full（全量 280 题）/ --preflight（2 题冒烟）/ --probe-descriptor（descriptor 探针）。")
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
                         k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag,
-                        rcv=args.rcv, gate_split=args.gate_split, gen_split=args.gen_split, seed=args.seed)
+                        rcv=args.rcv, gate_split=args.gate_split, gen_split=args.gen_split,
+                        num_epochs=args.num_epochs, seed=args.seed)
     print(f"== QD-over-Skills · mode={plan.mode} ==")
     if args.dry_run:
         ok = preflight_checks(plan)

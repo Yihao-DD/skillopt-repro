@@ -176,3 +176,10 @@ def test_resolve_plan_gen_split_default_and_faithful_protocol():
     assert p.gen_split == "train" and p.gate_split == "val"
     with pytest.raises(ValueError):
         resolve_plan(full=True, gen_split="bogus")
+
+
+def test_resolve_plan_num_epochs():
+    from scripts.run_experiment import resolve_plan
+
+    assert resolve_plan(full=True).num_epochs == 1                 # 默认无 slow update(旧行为)
+    assert resolve_plan(full=True, num_epochs=4).num_epochs == 4   # 原文完整 4 epoch

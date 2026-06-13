@@ -82,6 +82,7 @@ class SkillOptProducer:
     gen_items: list              # D_tr — generation/reflection set (propose)
     sel_items: list              # D_sel — validation-gate set (score/probe)
     out_root: str
+    slow_n: int = 20             # 原文 §3.6 slow-update sample count (from D_tr)
     _cache: dict = field(default_factory=dict)   # (skill_hash, tag) -> rollout results
 
     def _tag(self, items: list) -> str:
@@ -168,6 +169,27 @@ class SkillOptProducer:
         new_skill, _reports = apply_patch_with_report(skill, patch)
         return new_skill
 
+    def slow_update(self, prev_skill: str, curr_skill: str) -> str:
+        """原文 §3.6: roll out prev & curr skill on slow-update samples (from D_tr),
+        call the fork's run_slow_update → longitudinal guidance string."""
+        from skillopt.optimizer.slow_update import run_slow_update
+
+        samples = self.gen_items[: self.slow_n]
+        if not samples:
+            return ""
+        rp = self.adapter.rollout(samples, prev_skill, os.path.join(self.out_root, "slow", _skill_hash(prev_skill)))
+        rc = self.adapter.rollout(samples, curr_skill, os.path.join(self.out_root, "slow", _skill_hash(curr_skill)))
+        res = run_slow_update(curr_skill, rp, rc, samples, prev_skill=prev_skill)
+        return (res or {}).get("slow_update_content", "")
+
+    def apply_slow(self, skill: str, guidance: str) -> str:
+        """原文 §3.6: inject the guidance into the skill's protected slow-update field."""
+        if not guidance:
+            return skill
+        from skillopt.optimizer.slow_update import replace_slow_update_field
+
+        return replace_slow_update_field(skill, guidance)
+
 
 def make_producer(
     *,
@@ -203,4 +225,5 @@ def make_producer(
         edit_budget=edit_budget,
     )
     p = SkillOptProducer(adapter=adapter, gen_items=gen_items, sel_items=sel_items, out_root=out_root)
-    return CandidateProducer(propose=p.propose, apply=p.apply, score=p.score, probe=p.probe)
+    return CandidateProducer(propose=p.propose, apply=p.apply, score=p.score, probe=p.probe,
+                             slow_update=p.slow_update, apply_slow=p.apply_slow)
