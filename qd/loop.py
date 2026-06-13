@@ -349,7 +349,13 @@ def run_search(
         # num_epochs==1 => this never fires (flat loop == prior behavior).
         if num_epochs > 1 and producer.slow_update is not None and archive.occupied_cells():
             guidance = producer.slow_update(epoch_start_skill, archive.best_skill)
-            new_skill = (producer.apply_slow(archive.best_skill, guidance)
-                         if producer.apply_slow is not None else archive.best_skill + guidance)
-            archive.force_set(archive.best_cell, new_skill, archive.best_score, step)
+            if guidance:
+                # 原文 slow lesson 是全局领域知识 → 注入 ALL occupied elites（不只 best），
+                # 使下个 epoch 任何 UCB-parent 都带 lesson（对齐原文 current 带 lesson）。
+                # force-accept: 保各格原 score、只换 skill 文本（原文不重评）。
+                for cell in archive.occupied_cells():
+                    e = archive.elite(cell)
+                    injected = (producer.apply_slow(e.skill, guidance)
+                                if producer.apply_slow is not None else e.skill + guidance)
+                    archive.force_set(cell, injected, e.score, step)
     return result

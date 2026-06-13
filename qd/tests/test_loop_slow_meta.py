@@ -65,3 +65,35 @@ def test_slow_guidance_applied_to_best_when_it_helps():
                      producer=prod, num_epochs=2)
     assert applied                                   # slow guidance was applied
     assert "SLOWGUIDE" in res.archive.best_skill     # best elite carries the guidance
+
+
+def test_slow_guidance_injected_into_all_occupied_elites():
+    # K>1: slow lesson is a GLOBAL domain lesson -> every occupied elite gets it,
+    # not just the best (so any UCB-selected parent next epoch carries the lesson).
+    HI = "ws.cell(1, 1)\nws.cell(2, 1)\nws.cell(3, 1)\n"
+    LO = "x = 1\ny = 2\nz = 3\nw = 4\n"
+    n = {"i": 0}
+
+    def propose(skill, *, step, target_cell=None):
+        return {"edits": [{"text": f".{step}"}]}
+
+    def apply(skill, patch):
+        i = n["i"]
+        n["i"] += 1
+        return f"{skill}.{i}{'A' if i % 2 == 0 else 'B'}"
+
+    def score(skill):
+        return 0.9 if skill.endswith("A") else 0.8
+
+    def probe(skill):
+        return [{"code": HI if skill.endswith("A") else LO}]
+
+    prod = CandidateProducer(propose=propose, apply=apply, score=score, probe=probe,
+                             slow_update=lambda prev, curr: "DOMAINLESSON",
+                             apply_slow=lambda skill, g: skill + "|" + g)
+    res = run_search(k=16, baseline_skill="BASE", baseline_score=0.5, eval_budget=6,
+                     producer=prod, num_epochs=2)
+    occupied = res.archive.occupied_cells()
+    assert len(occupied) >= 2                                  # multi-cell
+    for cell in occupied:
+        assert "DOMAINLESSON" in res.archive.elite(cell).skill  # every elite carries the lesson
