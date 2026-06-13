@@ -13,6 +13,7 @@ from tools.analyze_returned_stats import (
     mcnemar_exact,
     paired_bootstrap_ci,
     paired_from_records,
+    pooled_mcnemar,
 )
 
 
@@ -63,6 +64,32 @@ def test_paired_from_records_aligns_on_id_intersection():
     xs, ys, ids = paired_from_records(a, b)
     assert ids == ["t2", "t3"]
     assert xs == [0, 1] and ys == [1, 1]
+
+
+def test_pooled_mcnemar_sums_discordant_pairs_across_seeds():
+    # Two seeds, B (arm b) beats A on net +2 and +3 discordant tasks.
+    s1a = {"t1": 1, "t2": 0, "t3": 0}
+    s1b = {"t1": 1, "t2": 1, "t3": 1}     # b=0, c=2
+    s2a = {"u1": 1, "u2": 0, "u3": 0, "u4": 0}
+    s2b = {"u1": 0, "u2": 1, "u3": 1, "u4": 1}  # b=1, c=3
+    res = pooled_mcnemar([(s1a, s1b), (s2a, s2b)])
+    assert res["b"] == 1 and res["c"] == 5     # pooled discordant counts
+    assert res["n_pairs"] == 7
+    assert res["p"] == mcnemar_exact(1, 5)
+    assert res["net"] == 4                       # c - b, b-arm net wins
+
+
+def test_pooled_mcnemar_all_seeds_one_direction_is_significant():
+    # 3 seeds, b-arm wins 12 discordant tasks each, loses 0 -> clearly significant.
+    pairs = []
+    for _ in range(3):
+        a = {f"t{i}": (1 if i == 0 else 0) for i in range(280)}       # only t0 correct
+        b = {f"t{i}": (1 if i < 13 else 0) for i in range(280)}       # t0..t12 correct
+        pairs.append((a, b))                                          # per seed: b=0, c=12
+    res = pooled_mcnemar(pairs)
+    assert res["b"] == 0 and res["c"] == 36
+    assert res["p"] < 0.01
+    assert res["net"] > 0
 
 
 def test_load_per_item_reads_json_and_jsonl(tmp_path):

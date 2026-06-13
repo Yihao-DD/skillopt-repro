@@ -68,6 +68,23 @@ def paired_bootstrap_ci(
     return (lo, hi, diff)
 
 
+def pooled_mcnemar(seed_pairs: list[tuple[dict, dict]]) -> dict:
+    """Pool discordant pairs across independent seeds, then exact McNemar.
+
+    Each element is ``(arm_a_map, arm_b_map)`` of ``{item_id: 0/1}`` for one seed
+    (item ids may differ across seeds — each seed aligned on its own intersection).
+    Pooling the discordant counts is the standard way to combine paired binary
+    outcomes from repeated runs into one significance test. ``b`` = A-correct
+    /B-wrong, ``c`` = B-correct/A-wrong; ``net = c - b`` (arm-b net wins)."""
+    b = c = n = 0
+    for a_map, b_map in seed_pairs:
+        xs, ys, ids = paired_from_records(a_map, b_map)
+        n += len(ids)
+        b += sum(1 for x, y in zip(xs, ys) if x == 1 and y == 0)
+        c += sum(1 for x, y in zip(xs, ys) if x == 0 and y == 1)
+    return {"b": b, "c": c, "net": c - b, "n_pairs": n, "p": mcnemar_exact(b, c)}
+
+
 def paired_from_records(a: dict, b: dict) -> tuple[list[int], list[int], list[str]]:
     """Align two ``{item_id: 0/1}`` maps on their id intersection (sorted)."""
     ids = sorted(set(a) & set(b))
