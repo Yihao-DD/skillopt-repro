@@ -81,6 +81,9 @@ class CandidateProducer:
     score: Callable[[str], float]          # (skill) -> selection-set metric score
     probe: Optional[Callable[[str], list[Traj]]] = None   # (skill) -> probe trajs; K>1 only
     rank_and_select: Callable[..., Patch] = _default_rank_and_select
+    # Epoch-wise slow update (原文 §3.6); both None => no slow update (flat loop).
+    slow_update: Optional[Callable[[str, str], str]] = None   # (prev_epoch_skill, curr_best) -> guidance
+    apply_slow: Optional[Callable[[str, str], str]] = None    # (skill, guidance) -> skill+guidance
 
 
 @dataclass(frozen=True)
@@ -233,6 +236,7 @@ def run_search(
     parent_beta: float = 0.1,
     use_ledger: bool = False,
     pre_check: Optional[Callable[[ProposedCandidate, RejectionLedger], bool]] = None,
+    num_epochs: int = 1,
 ) -> SearchResult:
     """Run one arm until the shared counter spends ``eval_budget`` expensive evals.
 
@@ -262,75 +266,90 @@ def run_search(
     cell_visits: dict[int, int] = {}
 
     step = 0
-    stalls = 0
     max_steps = eval_budget * 4 + 16  # hard cap: avoid an infinite loop if the producer can't make new candidates
-    while counter.expensive_evals < eval_budget and step < max_steps:
-        before = counter.expensive_evals
-        step += 1
-        edit_budget = scheduler.step()
+    per_epoch = max(1, eval_budget // num_epochs)
 
-        if k == 1:
-            # parent == best == current (ADR-0001); one candidate per step.
-            cr = produce_and_score_candidate(
-                archive.best_skill, edit_budget=edit_budget, producer=producer, counter=counter,
-                k=k, step=step, selection_size=selection_size, update_mode=update_mode,
-            )
-            upd = archive.update(cr.skill, cr.score, step=step, cell=cr.cell)
-            result.history.append(StepRecord(step=step, action=upd.action, cell=upd.cell, candidate=cr))
-        else:
-            parent_cell = _select_parent_cell(archive, cell_visits, gamma=parent_gamma, beta=parent_beta)
-            cell_visits[parent_cell] = cell_visits.get(parent_cell, 0) + 1
-            parent_elite = archive.elite(parent_cell)
-            parent, parent_score = parent_elite.skill, parent_elite.score
-            proposals = [
-                _propose_candidate(parent, parent_cell=parent_cell, edit_budget=edit_budget,
-                                   producer=producer, k=k, step=step, update_mode=update_mode,
-                                   ledger=ledger)
-                for _ in range(cps)
-            ]
-            result.n_proposed += len(proposals)
-            by_skill = {p.skill: p for p in proposals}
-            survivors = deduplicate_by_behavior(
-                [BehaviorCandidate(skill=p.skill, b=p.b, cell=p.cell) for p in proposals], dedup_epsilon
-            )
-            evaluated_this_step = 0
-            for idx, bc in enumerate(survivors):
-                if counter.expensive_evals >= eval_budget:
-                    break
-                pc = by_skill[bc.skill]
-                if pre_check is not None and ledger is not None:
-                    try:
-                        skip = not bool(pre_check(pc, ledger))
-                    except Exception:
-                        skip = False  # fail-open: infrastructure must never lose a candidate
-                    # Never skip ALL survivors in a step (the equal budget must fill).
-                    if skip and evaluated_this_step == 0 and idx == len(survivors) - 1:
-                        skip = False
-                    if skip:
-                        result.precheck_skips += 1
-                        continue
-                evaluated_this_step += 1
-                score = _score_proposed(pc, producer=producer, counter=counter, selection_size=selection_size)
-                upd = archive.update(pc.skill, score, step=step, cell=pc.cell)
-                cr = CandidateResult(skill=pc.skill, score=score, edit_budget=pc.edit_budget,
-                                     n_edits=pc.n_edits, cell=pc.cell, b=pc.b)
+    for epoch in range(num_epochs):
+        # Slow update (原文 §3.6) compares this epoch's STARTING skill vs its end-of-epoch best.
+        epoch_start_skill = archive.best_skill if archive.occupied_cells() else baseline_skill
+        epoch_target = eval_budget if epoch == num_epochs - 1 else min(eval_budget, (epoch + 1) * per_epoch)
+        stalls = 0
+        while counter.expensive_evals < epoch_target and step < max_steps:
+            before = counter.expensive_evals
+            step += 1
+            edit_budget = scheduler.step()
+
+            if k == 1:
+                # parent == best == current (ADR-0001); one candidate per step.
+                cr = produce_and_score_candidate(
+                    archive.best_skill, edit_budget=edit_budget, producer=producer, counter=counter,
+                    k=k, step=step, selection_size=selection_size, update_mode=update_mode,
+                )
+                upd = archive.update(cr.skill, cr.score, step=step, cell=cr.cell)
                 result.history.append(StepRecord(step=step, action=upd.action, cell=upd.cell, candidate=cr))
-                if upd.action == "accept" and pc.cell != pc.parent_cell:
-                    result.cross_cell_pickups += 1
-                if ledger is not None:
-                    ledger.append(LedgerEntry(
-                        step=step, action=upd.action, score=score, parent_score=parent_score,
-                        cell=pc.cell, parent_cell=pc.parent_cell, b=pc.b,
-                        n_edits=pc.n_edits, edits_summary=_patch_summary(pc.patch),
-                        parent_hash=skill_fingerprint(parent), cand_hash=skill_fingerprint(pc.skill),
-                    ))
+            else:
+                parent_cell = _select_parent_cell(archive, cell_visits, gamma=parent_gamma, beta=parent_beta)
+                cell_visits[parent_cell] = cell_visits.get(parent_cell, 0) + 1
+                parent_elite = archive.elite(parent_cell)
+                parent, parent_score = parent_elite.skill, parent_elite.score
+                proposals = [
+                    _propose_candidate(parent, parent_cell=parent_cell, edit_budget=edit_budget,
+                                       producer=producer, k=k, step=step, update_mode=update_mode,
+                                       ledger=ledger)
+                    for _ in range(cps)
+                ]
+                result.n_proposed += len(proposals)
+                by_skill = {p.skill: p for p in proposals}
+                survivors = deduplicate_by_behavior(
+                    [BehaviorCandidate(skill=p.skill, b=p.b, cell=p.cell) for p in proposals], dedup_epsilon
+                )
+                evaluated_this_step = 0
+                for idx, bc in enumerate(survivors):
+                    if counter.expensive_evals >= epoch_target:
+                        break
+                    pc = by_skill[bc.skill]
+                    if pre_check is not None and ledger is not None:
+                        try:
+                            skip = not bool(pre_check(pc, ledger))
+                        except Exception:
+                            skip = False  # fail-open: infrastructure must never lose a candidate
+                        # Never skip ALL survivors in a step (the equal budget must fill).
+                        if skip and evaluated_this_step == 0 and idx == len(survivors) - 1:
+                            skip = False
+                        if skip:
+                            result.precheck_skips += 1
+                            continue
+                    evaluated_this_step += 1
+                    score = _score_proposed(pc, producer=producer, counter=counter, selection_size=selection_size)
+                    upd = archive.update(pc.skill, score, step=step, cell=pc.cell)
+                    cr = CandidateResult(skill=pc.skill, score=score, edit_budget=pc.edit_budget,
+                                         n_edits=pc.n_edits, cell=pc.cell, b=pc.b)
+                    result.history.append(StepRecord(step=step, action=upd.action, cell=upd.cell, candidate=cr))
+                    if upd.action == "accept" and pc.cell != pc.parent_cell:
+                        result.cross_cell_pickups += 1
+                    if ledger is not None:
+                        ledger.append(LedgerEntry(
+                            step=step, action=upd.action, score=score, parent_score=parent_score,
+                            cell=pc.cell, parent_cell=pc.parent_cell, b=pc.b,
+                            n_edits=pc.n_edits, edits_summary=_patch_summary(pc.patch),
+                            parent_hash=skill_fingerprint(parent), cand_hash=skill_fingerprint(pc.skill),
+                        ))
 
-        # Spend the FULL equal budget: tolerate unproductive (all-cache-hit) steps
-        # by resampling; give up only after several consecutive stalls.
-        if counter.expensive_evals == before:
-            stalls += 1
-            if stalls >= 8:
-                break
-        else:
-            stalls = 0
+            # Spend the FULL equal budget: tolerate unproductive (all-cache-hit) steps
+            # by resampling; give up only after several consecutive stalls.
+            if counter.expensive_evals == before:
+                stalls += 1
+                if stalls >= 8:
+                    break
+            else:
+                stalls = 0
+
+        # ── Epoch boundary: slow update (原文 §3.6, default force-accept) ──────
+        # Inject longitudinal guidance into the best elite UNCONDITIONALLY (no gate).
+        # num_epochs==1 => this never fires (flat loop == prior behavior).
+        if num_epochs > 1 and producer.slow_update is not None and archive.occupied_cells():
+            guidance = producer.slow_update(epoch_start_skill, archive.best_skill)
+            new_skill = (producer.apply_slow(archive.best_skill, guidance)
+                         if producer.apply_slow is not None else archive.best_skill + guidance)
+            archive.force_set(archive.best_cell, new_skill, archive.best_score, step)
     return result

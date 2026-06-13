@@ -84,6 +84,19 @@ class Archive:
             new_score=old.score,
         )
 
+    def force_set(self, cell: int, skill: str, score: float, step: int) -> None:
+        """Unconditional set of a cell's elite (no gate). For the epoch-wise
+        slow update's default force-accept mode (原文 §3.6): longitudinal guidance
+        is injected into the best skill without passing the step-level gate."""
+        self._elites[self._normalize_cell(cell)] = Elite(skill=skill, score=score, step=step)
+
+    @property
+    def best_cell(self) -> int:
+        """Cell holding the global best elite (ties: earliest step)."""
+        if not self._elites:
+            raise ValueError("archive is empty")
+        return max(self._elites, key=lambda c: (self._elites[c].score, -self._elites[c].step))
+
     def _normalize_cell(self, cell: int) -> int:
         cell = int(cell)
         if self.k == 1:
