@@ -1,78 +1,127 @@
-# 完全忠于原文复现 + QD 注入 — review、可信度、预测、重构计划（2026-06-13）
+# 忠于原文复现 QD-over-SkillOpt — 流程、进度、待办、教训（权威文档，2026-06-13）
 
-## 0. 为什么要这次重构
+> 新会话冷启动读这一份。它固定：核心教训 / 原文协议 / 我们的偏差史 / 修正进度 / 剩余待办 / 真跑配置 / 预登记预测。
 
-用户要求「完全忠于原文 SkillOpt」再比较 greedy vs QD。审查发现：**fork 的 `engine/trainer.py` 就是原文完整实现**（三集分离 + slow/meta + epoch + rejected buffer + gate），而我们的 `qd/loop.py` 是绕过它的简化层。要忠于原文，应直接用 trainer，把 QD 作为 archive 维度注入。
+---
 
-## 1. 原文协议核对（基于 fulltext + trainer 代码）
+## 0. 核心教训（最重要，务必详细记住）
 
-| 机制 | 原文出处 | trainer 实现 |
+**铁律：对照基线必须完全忠于原文，绝不能阉割。否则一切"提升"都不可信。**
+
+我们犯的错，按因果链：
+
+1. **绕过了 fork 已有的原文完整实现**。fork `SkillOpt/skillopt/engine/trainer.py`（`ReflACTTrainer.train()`, ~1500 行）就是原文 SkillOpt 完整循环（三集分离 + slow/meta + rejected buffer + epoch + gate）。我们当初造 `qd/loop.py` 时**没意识到**这点，造了个简化版绕过它 → 自己引入了一堆偏差。**教训：动手造之前先查 fork 有没有现成的原文实现。**
+
+2. **三重偏差，全部同向高估 QD**：
+   - **合并集**：我们 gate==生成集（原文是 train 生成 / val gate 分离）→ 放大选择税，而 QD 抗选择税 → 利好 QD。
+   - **阉割 slow/meta**：原文默认开（Table 3：SSB 去掉 slow/meta 77.5→55.0，**−22.5pts**），我们没实现 → greedy 被砍 22 分。
+   - **阉割 rejected buffer**：原文标配（Table 3：去掉 −4.6pts），我们只在 RCV 模式传 → greedy 又被砍 4.6 分。
+   - 合起来：greedy 被砍 ~27pts 的组件 + 合并集放大 QD → 我们测出 QD 赢 +12.5，**对原文完全不可信**。
+
+3. **评估协议偏差系统性误导**：合并集 + 阉割基线两个 artifact 同向放大 QD 优势。这是整个 skill-optimization 领域的陷阱——**新方法很容易在"自制的弱基线 + 有利评估口径"上看起来赢**。
+
+4. **我两次搞错 split 角色**：先说 gate=40 是原文、又改口 gate=80 是原文，都错。最终靠原文 **Eq 2/3 白纸黑字**定案：gate=**selection(val)**，train 是**生成集** C(D_tr)，test 只报告。**教训：架构关键事实必须查原文/代码逐字，绝不凭记忆或直觉。**
+
+5. **深入调查前的复杂度估计会错**：A 方案（改 trainer）我先估"半天"，深入后发现 1-2 天 + 高风险（1500 行单体、端到端难测）→ 及时改推 B（qd 层补 slow/meta，复用 fork helper）。**教训：大重构先读透再估，发现更贵就及时反馈改方向。**
+
+6. **越忠于原文，QD 优势越可能缩小**（见 §6 预登记预测）。因为之前的大优势部分是 artifact。**这不是坏事**：QD 真有增量 = 经得起忠实化的硬结果；无增量 = "评估协议高估新方法"的方法论警示，同样可发表。诚实测量无论结果都有产出。
+
+**一句话**：我们花了很多轮才认清——之前所有 gate=40/80/120 的"QD 赢"都建立在阉割的 greedy + 有偏的评估口径上。忠于原文是为了得到**能信的**数字，哪怕它更小甚至打平。
+
+---
+
+## 1. 原文协议（基于 fulltext + trainer.py 代码核对）
+
+三集（Eq 2/3, §3.1）：**D_tr 生成候选 C(D_tr) → D_sel 选最优 argmax → D_test 报告**。
+
+| 机制 | 原文 | trainer.py | Table 3 在 SSB 的贡献 |
+|---|---|---|---|
+| 三集分离 | Eq 2/3 | rollout `split=train` / gate `split="valid_seen"`(:1324) / report test | — |
+| 验证门 strict> ties-reject | §3.5 | `evaluate_gate`(:1337) | — |
+| **slow update**（跨 epoch 领域 lesson，默认 force-accept 注入 current+best） | §3.6 | `run_slow_update`(:1633) / force-accept(:1755) | **+22.5** |
+| **rejected buffer**（epoch 内被拒 edits+score drop → reflect） | §3.5 | `_format_step_buffer`(:442) → `step_buffer_context` | **+4.6** |
+| meta skill（optimizer 端编辑经验） | §3.6 | `format_meta_skill_context` | +1.8 |
+| edit budget cosine 4→2 | §3.4 | `rank_and_select`(:1176) | — |
+| 默认超参 | line 560-567 | 4 epoch / rollout batch 40 / minibatch 8 / slow 20 samples | — |
+
+我们的 split（`SkillOpt/data/spreadsheetbench_split/`，零重叠已验证）：train=80(D_tr) / val=40(D_sel=gate) / test=280(D_test)。
+
+---
+
+## 2. 上次结果可信度判决（已锁定）
+
+- ✅ 可信：「QD archive 机制 > 单点贪心机制」（同简化 harness 公平消融，pooled McNemar 显著）；gate-size 趋势（优势随 gate 增大衰减）。
+- ❌ 不可信：「对原文 SkillOpt 提升 X pts」——greedy 阉割了 slow/meta(−22)+rejected buffer(−4.6) + 合并集放大 QD + 无一跑是原文逐字协议。
+- 数据存档：`docs/RESULTS-dpsk-3way-3seed.md`(gate=40) / `RESULTS-dpsk-gate80-3seed.md`(gate=80) / `RESULTS-dpsk-rcv-full.md` / `RESULTS-venus-qwen35.md`(公司)。
+
+---
+
+## 3. 决策：B 方案（qd 层补原文组件，复用 fork helper）
+
+A（改 trainer）最忠实但 1-2 天高风险（已否决）。**B：在 qd/loop.py 补齐原文缺的组件，复用 fork 的原文 helper（run_slow_update/format_meta_skill_context/replace_slow_update_field），只在 archive 一个维度扩展，两臂其余完全对称。**
+
+**原则（防止"为赢堆 buff"）**：QD = 原文 + archive 一个维度，其它一切两臂逐字对称。这样归因干净。绝不给 QD 加原文没有的机制。
+
+---
+
+## 4. 修正进度（已完成，commit 索引）
+
+| 项 | commit | 状态 |
 |---|---|---|
-| 三集 D_tr/D_sel/D_test | Eq 2/3, §3.1 | rollout `split=train`；gate `split="valid_seen"`(selection, trainer:1324)；report 在 test |
-| forward (生成) | §3.2 | D_tr batch 40 rollout → reflect |
-| backward (反思) | §3.3 | `run_minibatch_reflect`（失败/成功分组 minibatch） |
-| 学习率 (edit budget) | §3.4 | `rank_and_select` clip 到 L_t，cosine 4→2 (trainer:1176) |
-| 验证门 | §3.5 | `evaluate_gate` strict>，ties reject (trainer:1337) |
-| rejected buffer | §3.5 | epoch 内负反馈 → `step_buffer_context` |
-| slow update | §3.6 | `run_slow_update` 每 epoch 末；默认 **force-accept**（无条件注入 current+best，trainer:1755）|
-| meta skill | §3.6 | optimizer 端，`format_meta_skill_context` 注入 reflect prompt |
-| 默认超参 | line 560-567 | 4 epoch, rollout batch 40, minibatch 8, lr 4 cosine floor 2, slow 20 samples |
+| 三集分离（adapter gen_items/sel_items；`--gen-split`/`--gate-split`） | `d1dfae1` | ✅ |
+| epoch 循环 + slow update force-accept（loop num_epochs；archive force_set/best_cell） | `0f6a003` | ✅ |
+| adapter slow_update 包装 fork run_slow_update + `--num-epochs` 接线 | `a62c006` | ✅ |
+| **缺口 1**：slow lesson 注入**所有 occupied elite**（非只 best，对齐全局领域知识语义） | `7d1a56b` | ✅ |
+| 本计划文档 | `db5153d`→本次 | ✅ |
 
-## 2. 上次结果（gate=40/80/120）可信度——分层判决
+当前测试：**105 passed**（zero-API）。
 
-我们之前的跑用 `qd/loop.py`（简化层），相对原文有三层偏差：
+---
 
-| 偏差 | 影响 | 方向 |
-|---|---|---|
-| **合并集**（gate==生成集，原文 train 生成/val gate 分离） | 放大选择税，QD 抗选择税 → 利好 QD | 高估 QD |
-| **无 slow/meta**（我们没实现，原文默认开） | greedy 阉割（原文 Table3: SSB 去掉 slow/meta 77.5→55.0，−22.5pts）→ 我们 greedy 远弱于原文完整版 | 低估 greedy |
-| 迭代结构（eval_budget 计数 vs epoch×step×batch） | 简化，对照内部一致但非逐字 | 中性 |
+## 5. 剩余待办（按顺序，新会话从这里接）
 
-**判决**：
-- ✅ 可信 — 「QD archive 机制 > 单点贪心机制」（同简化 harness 公平消融，pooled McNemar 显著）；gate-size 趋势（优势随 gate 增大衰减）。
-- ❌ 不可信 — 「对原文 SkillOpt 提升 X pts」：greedy 阉割了 slow/meta（原文 SSB 强表现关键，+22.5pts）+ 合并集放大 QD 优势 + 无一跑是原文逐字协议。
-- ⚠️ 尖锐事实：原文 slow/meta 在 SSB 的贡献（+22.5）**远大于**我们测的 QD 优势（+4.8~12.5）。我们的 QD 是在关掉原文最强组件的阉割基线上展示优势的。
+### 缺口 3：rejected buffer 两臂默认开（贡献 +4.6，优先）
+- **现状**：原文标配，但我们只 RCV(use_ledger K>1) 模式传 `step_buffer_context` → 三臂（含 greedy K=1）都缺。
+- **设计**：两臂（**含 K=1**）默认维护 epoch-local rejected buffer（被拒 edits + score drop）+ propose 传 `ledger.render`（**不含** AIM/flips —— 那是 RCV 增强，已盖棺）。
+- **难点**：要改 K=1 的 propose 契约传 ledger（现有 K=1 测试假设 propose 无 ledger kwarg）；K=1+buffer 仍 == 原文（buffer 只改 propose 输入，不碰 gate 逻辑；原文 K=1 本就有 buffer）—— 保红线测试。
+- **与 RCV 关系**：原文 buffer = RCV 的"裸基础"（ledger.render 去掉 flips/AIM）。复用 ledger 基础设施，加"原文模式"（adapter.propose 只 render ledger，不调 AIM/flips）。
 
-## 3. 预登记预测（跑前锁定，不许事后挪门柱）
+### 缺口 2：meta skill 两臂都接（贡献 +1.8，次要）
+- 两臂都接 fork `format_meta_skill_context`（optimizer 端编辑经验，跨格累积），propose 传 `meta_skill_context`。对称，不只给 QD。
 
-完全忠于原文（trainer + slow/meta，greedy vs QD+archive）：
+### 次要简化（threats 标注，可不补）
+- minibatch-40 随机采样：原文每 step 采样 40 题 batch，我们用全 gen_items。次要。
+
+### 真跑（缺口 2/3 完成后）
+- **前置**：AutoDL 实例重新部署（代码全变了，重传 qd/ + scripts/）；**旧 DeepSeek key 轮换**（多轮跑暴露过）。
+- **配置**：`--full --gen-split train --gate-split val --num-epochs 4 --seed {1,2,3}`（两臂都跑原文完整：三集 + 4 epoch + slow + buffer + meta）。
+- **成本**：num_epochs=4 + slow update（每 epoch 额外 2×20 rollout）比单 epoch 贵 ~4-5×，3 seed 估 **~¥300-500**，跑前精算。
+- **统计**：`tools/analyze_returned_stats.py`(pooled_mcnemar) + 可选 `analyze_selection_generalization.py`。
+
+---
+
+## 6. 预登记预测（跑前锁定，不许事后挪门柱）
+
+完全忠于原文（三集 + slow + buffer + meta，greedy vs QD+archive）：
 
 | 情形 | 预测 | 概率 |
 |---|---|---|
-| 中心 | greedy 大幅变强（deepseek 上 ~0.55-0.65，含 slow/meta）；QD−greedy +0~+3pts，很可能**不显著** | ~50% |
-| 悲观 | QD ≈ 持平/不显著 — 之前优势几乎全是 artifact（合并集 + 阉割基线） | ~30% |
-| 乐观 | QD 稳定 +2~4pts 显著 — SSB 真有 off-baseline 更优行为区（gate=80 时 QD best 稳定落 cell 9 暗示存在），archive 在原文之上仍有增量 | ~20% |
+| 中心 | greedy 大幅变强（deepseek ~0.55-0.65）；QD−greedy **+0~+3pts，很可能不显著** | ~50% |
+| 悲观 | QD ≈ 持平/不显著 —— 之前优势几乎全是 artifact | ~30% |
+| 乐观 | QD 稳定 +2~4pts 显著 —— SSB 真有 off-baseline 更优行为区（gate=80 时 QD best 稳定落 cell 9 暗示） | ~20% |
 
-核心逻辑：越忠于原文 → greedy 越强、过拟合越轻 → QD 正则化红利越小。无论结果，诚实测量都有产出（QD 真有增量 = 硬结果；无增量 = 「评估协议 artifact 高估 skill 优化方法」的方法论警示）。
+核心逻辑：越忠于原文 → greedy 越强、过拟合越轻 → QD 正则化红利越小。
 
-## 4. 重构计划（A 方案：trainer + archive 注入）
+---
 
-**核心设计**：trainer 加可选参数 `archive: Archive | None`。
-- `archive=None` → **原文逐字**（greedy 臂；现有路径一字不改，git diff 验证 None 路径行为不变）。
-- `archive=Archive(k=16)` → **QD**：
-  - **parent**（step 开始的 current_skill）= `archive.elite(choose_parent_cell(...)).skill`（UCB 选格）；
-  - **descriptor**：candidate 的 selection rollout 轨迹（`sel_eval_dir/predictions/*/code.py`）→ `qd.descriptor` → cell（零额外 rollout，复用 gate 的 sel rollout）；
-  - **step gate**（trainer:1337-1366）：`archive.update(candidate, cand_score, cell)` 替代单点 `evaluate_gate`；
-  - **best 报告** = `archive.best_skill`；
-  - **slow update**（force-accept, trainer:1755）：注入到 archive 的 best elite + 当前 parent elite。
+## 7. 关键文件索引（新会话定位）
 
-**K=1 红线**：greedy = `archive=None`（原文逐字）。`archive=Archive(k=1)` 冗余但应 == 原文（ADR-0001：archive k=1 == evaluate_gate）——作为回归测试断言。
-
-**等预算**：两臂都跑原文 num_epochs×steps_per_epoch，**每 step 1 候选**（archive 不增候选数，parent 来自档案不增 rollout）→ 自动等预算（rollout 数相同）。这是比旧「K 候选/step」更干净的设计。
-
-## 5. 测试策略
-- archive 注入逻辑单测（zero-API）：parent=UCB elite、candidate 落格、格内 gate、best=archive.best。
-- **archive=None 回归**：注入代码路径在 None 时与原文逐字等价（结构断言 + 关键路径不变）。
-- 真跑验证：greedy(archive=None) 产出 == 原文 trainer；QD(k=16) n_occupied>1。
-
-## 6. 风险（诚实标注）
-- 改 fork 2000 行核心循环 → archive=None 路径必须逐字不变（最高优先级保护）。
-- slow update × archive 交互（slow 注入哪些 elite）是最不确定的注入点，需小心。
-- trainer 用 config 驱动 + 自己的 rollout 结构，QD descriptor 要对接 trainer 的 sel rollout 产物路径。
-- 这是第 4 个 fork commit，记入 `handoff/RELEASES.md`。
-
-## 7. 执行顺序
-1. 理解 trainer 的运行入口 / config（怎么单跑一次）。
-2. TDD：archive 注入（parent → gate → best → slow），每步保 archive=None 逐字。
-3. 本机 zero-API 验证 + 一次真跑 smoke（小 config）。
-4. AutoDL 上跑 greedy(None) vs QD(k=16)，3 seed，原文 4 epoch + slow/meta。
+- 原文全文：`paper-local/skillopt-paper-fulltext.txt`（Eq 2/3 @310；§3.5 gate @368；§3.6 slow/meta @379；Table 3 @539）。⚠️ paper-local 是 LOCAL-ONLY（`.git/info/exclude`），不 commit。
+- fork 原文 trainer：`SkillOpt/skillopt/engine/trainer.py`（gate@1337, slow@1633/1698, force-accept@1755）。
+- fork helper：`skillopt/optimizer/slow_update.py`（run_slow_update@309, replace_slow_update_field@80, inject_empty@41）；`meta_skill.py`。
+- 我们的 loop：`qd/loop.py`（run_search num_epochs + epoch + slow 注入所有 elite）。
+- 我们的 adapter：`qd/adapter_skillopt.py`（gen/sel 分离 + slow_update/apply_slow 包装 fork）。
+- archive：`qd/archive.py`（force_set/best_cell）。
+- 启动器：`scripts/run_experiment.py`（--gen-split/--gate-split/--num-epochs）。
+- 部署工具（不入库，含密码用法）：`tools/_autodl_ssh.py`（exec/put/get/putenv）。
+- 测试：`qd/tests/test_loop_slow_meta.py`(epoch+slow)、`test_adapter_split.py`(三集)。
