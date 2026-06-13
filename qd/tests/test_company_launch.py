@@ -140,3 +140,28 @@ def test_persist_archive_writes_best_and_all_elites(tmp_path):
     assert (tmp_path / "best_skill.md").read_text(encoding="utf-8") == "CAND"
     assert (tmp_path / "elite_cell0.md").read_text(encoding="utf-8") == "BASE"
     assert (tmp_path / "elite_cell5.md").read_text(encoding="utf-8") == "CAND"
+
+
+def test_gate_paths_resolves_each_split():
+    import os
+    from scripts.run_experiment import _gate_paths
+
+    base = os.path.join("SkillOpt", "data", "spreadsheetbench_split")
+    test_json = os.path.join(base, "test", "items.json")
+    assert _gate_paths(test_json, "test") == [test_json]
+    assert _gate_paths(test_json, "train") == [os.path.join(base, "train", "items.json")]
+    assert _gate_paths(test_json, "val") == [os.path.join(base, "val", "items.json")]
+    assert _gate_paths(test_json, "trainval") == [
+        os.path.join(base, "train", "items.json"),
+        os.path.join(base, "val", "items.json"),
+    ]
+
+
+def test_resolve_plan_accepts_train_and_trainval_gates():
+    import pytest
+    from scripts.run_experiment import resolve_plan
+
+    assert resolve_plan(full=True, gate_split="train").gate_split == "train"
+    assert resolve_plan(full=True, gate_split="trainval").gate_split == "trainval"
+    with pytest.raises(ValueError):
+        resolve_plan(full=True, gate_split="bogus")

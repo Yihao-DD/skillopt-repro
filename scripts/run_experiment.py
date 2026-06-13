@@ -86,8 +86,8 @@ def resolve_plan(
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
     if tag is not None and not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
         raise ValueError(f"--tag 只能含字母/数字/.-_（要拿来做目录名）: {tag!r}")
-    if gate_split not in ("test", "val"):
-        raise ValueError(f"--gate-split 只能是 test 或 val: {gate_split!r}")
+    if gate_split not in ("test", "val", "train", "trainval"):
+        raise ValueError(f"--gate-split 只能是 test/val/train/trainval: {gate_split!r}")
     mode = "full" if full else "preflight"
     base = PRESETS[mode]
     return Plan(
@@ -107,6 +107,18 @@ def resolve_plan(
 def _sibling_split(items_json: str, split: str) -> str:
     """Path of a sibling split's items.json (…/spreadsheetbench_split/<split>/items.json)."""
     return os.path.join(os.path.dirname(os.path.dirname(items_json)), split, "items.json")
+
+
+def _gate_paths(items_json: str, gate_split: str) -> list[str]:
+    """Split json paths whose items concatenate into the gate set.
+
+    test=报告集自身（旧口径）；val/train=单 split；trainval=train+val 合并（120）.
+    train 即 SkillOpt 原文的选择集（gate=train → K=1 臂 == 原文 SkillOpt 协议）."""
+    if gate_split == "test":
+        return [items_json]
+    if gate_split == "trainval":
+        return [_sibling_split(items_json, "train"), _sibling_split(items_json, "val")]
+    return [_sibling_split(items_json, gate_split)]
 
 
 def persist_archive(archive, outdir: str) -> list[str]:
@@ -169,10 +181,13 @@ def preflight_checks(plan: Plan) -> bool:
         print(f"  [{'OK ' if ok else 'FAIL'}] {label}: {shown}")
         all_ok = all_ok and ok
     n_resolved = plan.n
-    gate_json = _sibling_split(items_json, "val") if plan.gate_split == "val" else items_json
-    if plan.n is None and os.path.exists(gate_json):
-        with open(gate_json, encoding="utf-8") as fh:
-            n_resolved = len(json.load(fh))
+    if plan.n is None:
+        total = 0
+        for gp in _gate_paths(items_json, plan.gate_split):
+            if os.path.exists(gp):
+                with open(gp, encoding="utf-8") as fh:
+                    total += len(json.load(fh))
+        n_resolved = total or None
     print(f"  resolved N (tasks per arm, gate={plan.gate_split}) = "
           f"{n_resolved if n_resolved is not None else '<needs items.json>'}")
     print(f"  expensive evals per arm    = {plan.eval_budget}   (K=1 greedy vs K={plan.k} QD, equal budget)")
@@ -214,14 +229,16 @@ def run(plan: Plan) -> dict:
     items_json, data_root = _data_paths()
     items = load_items(items_json)            # test split（终评集）
     gate_items = items
-    if plan.gate_split == "val":
-        gate_items = load_items(_sibling_split(items_json, "val"))
+    if plan.gate_split != "test":
+        gate_items = []
+        for gp in _gate_paths(items_json, plan.gate_split):
+            gate_items.extend(load_items(gp))
     if plan.n is not None:
         gate_items = gate_items[: plan.n]
     out = _out_dir(plan)
     print(f"frozen: {cfg} temp=0 seed=42  optimizer_seed={plan.seed}")
     print(f"mode={plan.mode}  gate_split={plan.gate_split}  N_gate={len(gate_items)}"
-          f"{'  N_test=' + str(len(items)) if plan.gate_split == 'val' else ''}"
+          f"{'  N_test=' + str(len(items)) if plan.gate_split != 'test' else ''}"
           f"  eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
 
     def producer(tag):
@@ -285,7 +302,7 @@ def run(plan: Plan) -> dict:
     for arm_tag, res_arm in arm_results:
         persist_archive(res_arm.archive, os.path.join(out, arm_tag))
 
-    if plan.gate_split == "val":
+    if plan.gate_split != "test":
         # 三分割终评：gate 没见过的 test 全集上各跑一次 best（每臂一次昂贵 rollout）。
         test_items = items[: plan.n] if plan.n is not None else items  # preflight 冒烟不许偷跑全量终评
         tp = make_producer(items=test_items, data_root=data_root, out_root=os.path.join(out, "test_eval"),
@@ -377,8 +394,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tag", default=None, help="本次运行标签 → 写到 runs/<mode>-<tag>/（多 API 对比时分目录，不互相覆盖）")
     p.add_argument("--rcv", action="store_true",
                    help="加跑第三臂：K=k + 拒绝账本条件化变异（ADR-0007；等预算，三臂消融 贪心/QD/QD+RCV）")
-    p.add_argument("--gate-split", choices=("test", "val"), default="test",
-                   help="val=三分割：gate 在 val(40题) 上打分(便宜7倍)、终评在 test(280) 上各臂一次（消选择税）")
+    p.add_argument("--gate-split", choices=("test", "val", "train", "trainval"), default="test",
+                   help="三分割：gate 在 val(40)/train(80,原文协议)/trainval(120) 上打分、终评在 test(280) 各臂一次（消选择税）；test=旧口径")
     p.add_argument("--seed", type=int, default=42, help="optimizer seed（记录进 summary + 设 OPTIMIZER_SEED）")
     p.add_argument("--probe-descriptor", action="store_true",
                    help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
