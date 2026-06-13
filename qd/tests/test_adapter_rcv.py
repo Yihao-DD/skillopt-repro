@@ -28,7 +28,9 @@ class FakeEnvAdapter:
 
 
 def _producer(tmp_path, rollouts):
-    return SkillOptProducer(adapter=FakeEnvAdapter(rollouts), items=[], out_root=str(tmp_path))
+    items = []   # one object for gen AND sel => merged mode (RCV flips diff same-set)
+    return SkillOptProducer(adapter=FakeEnvAdapter(rollouts), gen_items=items, sel_items=items,
+                            out_root=str(tmp_path))
 
 
 def test_propose_without_ledger_is_upstream_identical(tmp_path):
@@ -43,8 +45,8 @@ def test_propose_with_ledger_injects_avoid_flips_and_aim(tmp_path):
         "CAND": [{"id": "1024", "hard": 0}, {"id": "1003", "hard": 0}],
     }
     p = _producer(tmp_path, rollouts)
-    p._rollout("PARENT")
-    p._rollout("CAND")
+    p._rollout("PARENT", p.sel_items)
+    p._rollout("CAND", p.sel_items)
     led = RejectionLedger()
     led.append(LedgerEntry(
         step=1, action="reject", score=0.40, parent_score=0.45, cell=5, parent_cell=5,
@@ -62,7 +64,7 @@ def test_propose_with_ledger_injects_avoid_flips_and_aim(tmp_path):
 
 def test_unknown_hashes_degrade_without_flips(tmp_path):
     p = _producer(tmp_path, {"PARENT": [{"id": "1", "hard": 1}]})
-    p._rollout("PARENT")
+    p._rollout("PARENT", p.sel_items)
     led = RejectionLedger()
     led.append(LedgerEntry(step=1, action="reject", score=0.4, parent_score=0.45,
                            parent_hash="deadbeef", cand_hash="cafebabe",

@@ -66,7 +66,8 @@ class Plan:
     max_tokens: int
     tag: str | None = None   # optional run label -> runs/<mode>-<tag>/ (multi-API compare)
     rcv: bool = False        # third arm: K=k + rejection-ledger conditioning (ADR-0007)
-    gate_split: str = "test"  # "test"=旧行为(选择集==报告集) / "val"=三分割(gate 在 val、终评在 test)
+    gate_split: str = "test"  # D_sel gate 集: test=旧合并(gate==report) / val=原文 selection / train / trainval
+    gen_split: str = "same"   # D_tr 生成集: same=与 gate 同集(合并/旧行为) / train=原文协议(配 gate=val 即 Eq2/3)
     seed: int = 42            # optimizer seed (记录+设 OPTIMIZER_SEED env；fork 侧支持待第4个 fork commit)
 
 
@@ -81,6 +82,7 @@ def resolve_plan(
     tag: str | None = None,
     rcv: bool = False,
     gate_split: str = "test",
+    gen_split: str = "same",
     seed: int = 42,
 ) -> Plan:
     """Pure plan resolution (no IO, no model) — preset defaults, CLI overrides win."""
@@ -88,6 +90,8 @@ def resolve_plan(
         raise ValueError(f"--tag 只能含字母/数字/.-_（要拿来做目录名）: {tag!r}")
     if gate_split not in ("test", "val", "train", "trainval"):
         raise ValueError(f"--gate-split 只能是 test/val/train/trainval: {gate_split!r}")
+    if gen_split not in ("same", "val", "train", "trainval"):
+        raise ValueError(f"--gen-split 只能是 same/val/train/trainval: {gen_split!r}")
     mode = "full" if full else "preflight"
     base = PRESETS[mode]
     return Plan(
@@ -100,6 +104,7 @@ def resolve_plan(
         tag=tag,
         rcv=rcv,
         gate_split=gate_split,
+        gen_split=gen_split,
         seed=seed,
     )
 
@@ -227,22 +232,34 @@ def run(plan: Plan) -> dict:
     os.environ["OPTIMIZER_SEED"] = str(plan.seed)  # 记录意图；fork 侧读取待第4个 fork commit
     cfg = configure_deepseek()  # raises if AZURE_OPENAI_API_KEY missing
     items_json, data_root = _data_paths()
-    items = load_items(items_json)            # test split（终评集）
-    gate_items = items
-    if plan.gate_split != "test":
-        gate_items = []
-        for gp in _gate_paths(items_json, plan.gate_split):
-            gate_items.extend(load_items(gp))
+    items = load_items(items_json)            # D_test（终评集，只报告）
+
+    def load_split(split: str) -> list:
+        if split == "test":
+            return items
+        acc: list = []
+        for gp in _gate_paths(items_json, split):
+            acc.extend(load_items(gp))
+        return acc
+
+    # 原文 Eq2/3 三集：gen=D_tr 生成候选，sel=D_sel gate，test=D_test 报告。
+    # gen_split="same" => gen 集就是 gate 集（同对象 => adapter 合并模式 => 旧单集行为）。
+    sel_items = load_split(plan.gate_split)
+    gen_items = sel_items if plan.gen_split == "same" else load_split(plan.gen_split)
     if plan.n is not None:
-        gate_items = gate_items[: plan.n]
+        sel_items = sel_items[: plan.n]
+        gen_items = sel_items if plan.gen_split == "same" else gen_items[: plan.n]
     out = _out_dir(plan)
+    separated = gen_items is not sel_items
     print(f"frozen: {cfg} temp=0 seed=42  optimizer_seed={plan.seed}")
-    print(f"mode={plan.mode}  gate_split={plan.gate_split}  N_gate={len(gate_items)}"
-          f"{'  N_test=' + str(len(items)) if plan.gate_split != 'test' else ''}"
-          f"  eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
+    print(f"mode={plan.mode}  gen_split={plan.gen_split}({len(gen_items)}) "
+          f"gate_split={plan.gate_split}({len(sel_items)})  N_test={len(items)}  "
+          f"{'三集分离(忠于原文)' if separated else '合并模式(gen==gate)'}  "
+          f"eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
 
     def producer(tag):
-        return make_producer(items=gate_items, data_root=data_root, out_root=os.path.join(out, tag),
+        return make_producer(gen_items=gen_items, sel_items=sel_items, data_root=data_root,
+                             out_root=os.path.join(out, tag),
                              workers=plan.workers, max_completion_tokens=plan.max_tokens)
 
     base_prod = producer("baseline")
@@ -273,7 +290,9 @@ def run(plan: Plan) -> dict:
     summary = {
         "created": datetime.now(timezone.utc).isoformat(),
         "plan": asdict(plan),
-        "gate_tasks": [it["id"] for it in gate_items],   # 搜索/gate 实际用的题
+        "gen_split": plan.gen_split,
+        "gen_tasks": [it["id"] for it in gen_items],      # D_tr 生成集
+        "gate_tasks": [it["id"] for it in sel_items],     # D_sel gate 集
         "test_tasks": [it["id"] for it in items],        # 终评集（gate_split=test 时两者同集）
         "backend": cfg,  # endpoint + models, NO key
         "frozen": {"target_temperature": 0, "target_seed": 42, "optimizer_temperature": 0.8},
@@ -395,7 +414,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rcv", action="store_true",
                    help="加跑第三臂：K=k + 拒绝账本条件化变异（ADR-0007；等预算，三臂消融 贪心/QD/QD+RCV）")
     p.add_argument("--gate-split", choices=("test", "val", "train", "trainval"), default="test",
-                   help="三分割：gate 在 val(40)/train(80,原文协议)/trainval(120) 上打分、终评在 test(280) 各臂一次（消选择税）；test=旧口径")
+                   help="D_sel gate 集：val=原文 selection(40)/train(80)/trainval(120)；test=旧合并自评。终评恒在 test")
+    p.add_argument("--gen-split", choices=("same", "val", "train", "trainval"), default="same",
+                   help="D_tr 生成集：原文协议用 --gen-split train --gate-split val（Eq2/3 三集分离）；same=与 gate 同集(旧合并)")
     p.add_argument("--seed", type=int, default=42, help="optimizer seed（记录进 summary + 设 OPTIMIZER_SEED）")
     p.add_argument("--probe-descriptor", action="store_true",
                    help="探针：跑 ~8 题 baseline 算 descriptor 占格，验该模型散不散（几毛钱，全量前先跑）")
@@ -417,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("必须指定 --full（全量 280 题）/ --preflight（2 题冒烟）/ --probe-descriptor（descriptor 探针）。")
     plan = resolve_plan(full=args.full, n=args.n, eval_budget=args.eval_budget,
                         k=args.k, workers=args.workers, max_tokens=args.max_tokens, tag=args.tag,
-                        rcv=args.rcv, gate_split=args.gate_split, seed=args.seed)
+                        rcv=args.rcv, gate_split=args.gate_split, gen_split=args.gen_split, seed=args.seed)
     print(f"== QD-over-Skills · mode={plan.mode} ==")
     if args.dry_run:
         ok = preflight_checks(plan)

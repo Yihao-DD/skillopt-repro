@@ -165,3 +165,14 @@ def test_resolve_plan_accepts_train_and_trainval_gates():
     assert resolve_plan(full=True, gate_split="trainval").gate_split == "trainval"
     with pytest.raises(ValueError):
         resolve_plan(full=True, gate_split="bogus")
+
+
+def test_resolve_plan_gen_split_default_and_faithful_protocol():
+    import pytest
+    from scripts.run_experiment import resolve_plan
+
+    assert resolve_plan(full=True).gen_split == "same"                  # 默认合并(旧行为不破坏)
+    p = resolve_plan(full=True, gen_split="train", gate_split="val")    # 原文 Eq2/3 三集分离
+    assert p.gen_split == "train" and p.gate_split == "val"
+    with pytest.raises(ValueError):
+        resolve_plan(full=True, gen_split="bogus")

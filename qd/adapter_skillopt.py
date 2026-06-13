@@ -73,30 +73,41 @@ def _skill_hash(s: str) -> str:
 
 @dataclass
 class SkillOptProducer:
-    """Caches one SpreadsheetBench rollout per skill; serves score/probe/propose."""
+    """Faithful to SkillOpt Eq 2/3: candidates are GENERATED on D_tr (``gen_items``,
+    propose) and GATED on D_sel (``sel_items``, score/probe). Caches one rollout
+    per (skill, split); when ``gen_items is sel_items`` (merged mode) the two
+    collapse to a single shared rollout (back-compat with the old single-set runs)."""
 
     adapter: object              # skillopt SpreadsheetBenchAdapter
-    items: list                  # selection set (list of item dicts from items.json)
+    gen_items: list              # D_tr — generation/reflection set (propose)
+    sel_items: list              # D_sel — validation-gate set (score/probe)
     out_root: str
-    _cache: dict = field(default_factory=dict)   # skill_hash -> rollout results
+    _cache: dict = field(default_factory=dict)   # (skill_hash, tag) -> rollout results
 
-    def _rollout(self, skill: str) -> list[dict]:
-        h = _skill_hash(skill)
-        if h not in self._cache:
-            self._cache[h] = self.adapter.rollout(self.items, skill, os.path.join(self.out_root, h))
-        return self._cache[h]
+    def _tag(self, items: list) -> str:
+        # Same object as sel_items -> "sel" (also the merged-mode single tag);
+        # the generation set gets its own "gen" tag only when truly separate.
+        return "sel" if items is self.sel_items else "gen"
+
+    def _rollout(self, skill: str, items: list) -> list[dict]:
+        tag = self._tag(items)
+        key = (_skill_hash(skill), tag)
+        if key not in self._cache:
+            self._cache[key] = self.adapter.rollout(
+                items, skill, os.path.join(self.out_root, tag, _skill_hash(skill)))
+        return self._cache[key]
 
     def score(self, skill: str) -> float:
         from skillopt.utils import compute_score
 
-        hard, _soft = compute_score(self._rollout(skill))
+        hard, _soft = compute_score(self._rollout(skill, self.sel_items))
         return float(hard)
 
     def probe(self, skill: str) -> list[dict]:
-        # Real behavior trajectories: the code DeepSeek generated per item, saved
-        # by the rollout to predictions/<id>/code.py (NOT in the result dict).
-        results = self._rollout(skill)
-        pred_dir = os.path.join(self.out_root, _skill_hash(skill), "predictions")
+        # Behavior trajectories from the SEL rollout (cell ~ gate behavior): the
+        # code DeepSeek generated per item, saved to predictions/<id>/code.py.
+        results = self._rollout(skill, self.sel_items)
+        pred_dir = os.path.join(self.out_root, self._tag(self.sel_items), _skill_hash(skill), "predictions")
         trajs = []
         for r in results:
             code_path = os.path.join(pred_dir, str(r.get("id", "")), "code.py")
@@ -108,10 +119,16 @@ class SkillOptProducer:
         return trajs
 
     def _enrich(self, e: LedgerEntry) -> LedgerEntry:
-        """Lazily attach per-task flips by diffing the already-paid rollout cache."""
-        if e.task_flips or e.parent_hash not in self._cache or e.cand_hash not in self._cache:
+        """Lazily attach per-task flips from the rollout cache. Parent was rolled
+        out at generation (gen tag unless merged), candidate at the gate (sel).
+        Under true split the two sets are disjoint, so flips degrade to empty."""
+        if e.task_flips:
             return e
-        return replace(e, task_flips=_flips(self._cache[e.parent_hash], self._cache[e.cand_hash]))
+        ptag = "sel" if self.gen_items is self.sel_items else "gen"
+        pk, ck = (e.parent_hash, ptag), (e.cand_hash, "sel")
+        if pk not in self._cache or ck not in self._cache:
+            return e
+        return replace(e, task_flips=_flips(self._cache[pk], self._cache[ck]))
 
     def _rcv_context(self, *, target_cell: int | None, ledger: "RejectionLedger | None") -> str:
         """AVOID (ledger render + flips) + AIM (verbalized target cell), or ""."""
@@ -130,14 +147,15 @@ class SkillOptProducer:
 
     def propose(self, skill: str, *, step: int, target_cell: int | None = None,
                 ledger: "RejectionLedger | None" = None) -> dict:
-        results = self._rollout(skill)
+        results = self._rollout(skill, self.gen_items)   # generate candidates on D_tr
         kwargs = {}
         ctx = self._rcv_context(target_cell=target_cell, ledger=ledger)
         if ctx:
             # Upstream-blessed injection channel: reflect renders this under
             # "## Previous Steps in This Epoch" — exactly the AVOID semantics.
             kwargs["step_buffer_context"] = ctx
-        patches = self.adapter.reflect(results, skill, os.path.join(self.out_root, _skill_hash(skill)), **kwargs)
+        patches = self.adapter.reflect(
+            results, skill, os.path.join(self.out_root, self._tag(self.gen_items), _skill_hash(skill)), **kwargs)
         edits: list = []
         for p in patches or []:
             if p and isinstance(p.get("patch"), dict):
@@ -153,7 +171,9 @@ class SkillOptProducer:
 
 def make_producer(
     *,
-    items: list,
+    items: list | None = None,
+    gen_items: list | None = None,
+    sel_items: list | None = None,
     data_root: str,
     out_root: str,
     mode: str = "single",
@@ -161,11 +181,18 @@ def make_producer(
     max_completion_tokens: int = 4096,
     edit_budget: int = 4,
 ) -> CandidateProducer:
-    """Build a DeepSeek-backed CandidateProducer over the given SpreadsheetBench items.
+    """Build a DeepSeek-backed CandidateProducer over SpreadsheetBench items.
 
-    Call :func:`configure_deepseek` first. ``items`` come from
-    ``load_items(.../items.json)``; ``data_root`` is the dir holding the task xlsx.
+    Call :func:`configure_deepseek` first. Two modes:
+      - faithful split (原文 Eq 2/3): pass ``gen_items`` (D_tr, generate) and
+        ``sel_items`` (D_sel, gate);
+      - merged/legacy: pass ``items`` (gen == sel == one set; old single-set runs).
+    ``data_root`` is the dir holding the task xlsx.
     """
+    if items is not None:
+        gen_items = sel_items = items   # legacy single-set == merged mode
+    if gen_items is None or sel_items is None:
+        raise ValueError("make_producer needs either items=, or both gen_items= and sel_items=")
     from skillopt.envs.spreadsheetbench.adapter import SpreadsheetBenchAdapter
 
     adapter = SpreadsheetBenchAdapter(
@@ -175,5 +202,5 @@ def make_producer(
         max_completion_tokens=max_completion_tokens,
         edit_budget=edit_budget,
     )
-    p = SkillOptProducer(adapter=adapter, items=items, out_root=out_root)
+    p = SkillOptProducer(adapter=adapter, gen_items=gen_items, sel_items=sel_items, out_root=out_root)
     return CandidateProducer(propose=p.propose, apply=p.apply, score=p.score, probe=p.probe)
