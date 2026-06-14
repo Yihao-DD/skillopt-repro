@@ -20,7 +20,7 @@ from qd.loop import CandidateProducer, run_search
 def _base_producer(scores, **extra):
     n = {"i": 0}
 
-    def propose(skill, *, step, target_cell=None):
+    def propose(skill, *, step, target_cell=None, ledger=None, meta=""):
         return {"edits": [{"text": f".s{step}"}]}
 
     def apply(skill, patch):
@@ -74,7 +74,7 @@ def test_slow_guidance_injected_into_all_occupied_elites():
     LO = "x = 1\ny = 2\nz = 3\nw = 4\n"
     n = {"i": 0}
 
-    def propose(skill, *, step, target_cell=None):
+    def propose(skill, *, step, target_cell=None, ledger=None):
         return {"edits": [{"text": f".{step}"}]}
 
     def apply(skill, patch):
@@ -97,3 +97,62 @@ def test_slow_guidance_injected_into_all_occupied_elites():
     assert len(occupied) >= 2                                  # multi-cell
     for cell in occupied:
         assert "DOMAINLESSON" in res.archive.elite(cell).skill  # every elite carries the lesson
+
+
+# ── 缺口 2: optimizer meta skill (原文 §3.6) ──────────────────────────────────
+# Unlike slow update, meta skill is optimizer-side memory: it does NOT modify the
+# skill document. The loop holds `active_meta`, threads it to propose, and refreshes
+# it once per epoch via producer.meta_update(prev_epoch_skill, curr_best, prev_meta).
+# Symmetric across both arms (跨格累积 — one global memory, not per-cell).
+
+def test_num_epochs_1_never_calls_meta_update():
+    calls = []
+    prod = _base_producer([0.1] * 8,
+                          meta_update=lambda prev, curr, prev_meta: calls.append((prev, curr)) or "M")
+    run_search(k=1, baseline_skill="B", baseline_score=0.9, eval_budget=6, producer=prod, num_epochs=1)
+    assert calls == []          # default flat loop: no epoch boundary, no meta update
+
+
+def test_meta_update_called_once_per_epoch():
+    calls = []
+    prod = _base_producer([0.1] * 12,
+                          meta_update=lambda prev, curr, prev_meta: calls.append((prev, curr)) or "M")
+    run_search(k=1, baseline_skill="BASE", baseline_score=0.9, eval_budget=6, producer=prod, num_epochs=3)
+    assert len(calls) == 3      # one meta update per epoch boundary
+
+
+def test_active_meta_from_prev_epoch_threaded_to_propose():
+    seen_meta: list[str] = []
+    n = {"i": 0}
+
+    def propose(skill, *, step, target_cell=None, ledger=None, meta=""):
+        seen_meta.append(meta)
+        return {"edits": [{"text": f".s{step}"}]}
+
+    def apply(skill, patch):
+        return skill + "".join(e["text"] for e in patch.get("edits", []))
+
+    scores = [0.1] * 20
+
+    def score(skill):
+        s = scores[min(n["i"], len(scores) - 1)]
+        n["i"] += 1
+        return s
+
+    prod = CandidateProducer(propose=propose, apply=apply, score=score,
+                             meta_update=lambda prev, curr, prev_meta: "METAMEM")
+    run_search(k=1, baseline_skill="BASE", baseline_score=0.9, eval_budget=4, producer=prod, num_epochs=2)
+    assert seen_meta[0] == ""         # first epoch: no optimizer memory yet
+    assert seen_meta[-1] == "METAMEM" # later epoch: memory from the prior epoch is threaded in
+
+
+def test_meta_update_receives_previous_meta_for_accumulation():
+    seen_prev: list[str] = []
+
+    def mu(prev, curr, prev_meta):
+        seen_prev.append(prev_meta)
+        return f"M{len(seen_prev)}"
+
+    prod = _base_producer([0.1] * 12, meta_update=mu)
+    run_search(k=1, baseline_skill="B", baseline_score=0.9, eval_budget=6, producer=prod, num_epochs=3)
+    assert seen_prev == ["", "M1", "M2"]   # each boundary gets the prior epoch's memory

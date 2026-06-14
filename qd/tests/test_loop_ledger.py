@@ -4,8 +4,9 @@ Zero API. Contracts under test:
   - use_ledger=True (K>1): a RejectionLedger flows into ``producer.propose`` as a
     kwarg, grows by exactly one entry per scored candidate, and records the tried
     direction (patch summary) with parent/candidate fingerprints.
-  - K=1 IGNORES RCV flags entirely (red line C0: K=1 == SkillOpt byte-for-byte;
-    old-style propose without a ledger kwarg must keep working).
+  - K=1 gets the faithful epoch-local buffer (缺口 3) but IGNORES the RCV layer:
+    res.ledger is not exposed and pre_check never fires, so K=1 keeps its
+    byte-for-byte SkillOpt gate behavior (gate parity: test_k1_reduces_to_skillopt).
   - pre_check guardrails: skipping never spends expensive budget yet the arm still
     spends its FULL equal budget; a step can never skip ALL survivors; pre_check
     exceptions fail OPEN (candidate evaluated); pre_check without use_ledger is a
@@ -69,9 +70,14 @@ def test_ledger_entries_record_direction_and_fingerprints() -> None:
     assert entry.cand_hash and entry.cand_hash != entry.parent_hash
 
 
-def test_k1_ignores_rcv_flags_and_keeps_old_propose_contract() -> None:
-    # propose WITHOUT a ledger kwarg: would TypeError if the loop passed one.
-    def propose(skill, *, step, target_cell=None):
+def test_k1_gets_faithful_buffer_but_ignores_rcv_exposure_and_precheck() -> None:
+    # 缺口 3: K=1 now RECEIVES the epoch-local rejected buffer (faithful — SkillOpt K=1
+    # has a step buffer). But the RCV layer (ADR-0007) stays OFF at K=1: res.ledger is
+    # not exposed and pre_check never fires, so K=1 keeps byte-for-byte SkillOpt gating.
+    seen_buffer: list[bool] = []
+
+    def propose(skill, *, step, target_cell=None, ledger=None):
+        seen_buffer.append(ledger is not None)
         return {"edits": [{"text": f".x{step}"}]}   # step-distinct, else cache-hit stalls
 
     prod = CandidateProducer(
@@ -82,8 +88,9 @@ def test_k1_ignores_rcv_flags_and_keeps_old_propose_contract() -> None:
     res = run_search(k=1, baseline_skill="B", baseline_score=0.9, eval_budget=2,
                      producer=prod, use_ledger=True, pre_check=lambda pc, led: False)
     assert res.expensive_evals == 2
-    assert res.ledger is None
-    assert res.precheck_skips == 0
+    assert seen_buffer and all(seen_buffer)   # faithful buffer threaded to K=1 propose
+    assert res.ledger is None                 # RCV artifact NOT exposed at K=1
+    assert res.precheck_skips == 0            # pre_check ignored at K=1 (else it would skip all)
 
 
 def test_pre_check_skip_spends_no_eval_but_budget_still_fills() -> None:
@@ -139,3 +146,14 @@ def test_pre_check_without_use_ledger_is_a_config_error() -> None:
     with pytest.raises(ValueError):
         run_search(k=16, baseline_skill="BASE", baseline_score=0.5, eval_budget=1,
                    producer=_ledger_aware_producer(sizes), pre_check=lambda pc, led: True)
+
+
+def test_rcv_ledger_accumulates_across_epochs() -> None:
+    # Under RCV + multi-epoch, res.ledger is ONE accumulating ledger that keeps every
+    # epoch's outcomes (epoch-local reset is for the faithful buffer only, not RCV).
+    sizes: list[int] = []
+    res = run_search(k=16, baseline_skill="BASE", baseline_score=0.5, eval_budget=6,
+                     producer=_ledger_aware_producer(sizes), use_ledger=True, num_epochs=3)
+    assert res.expensive_evals == 6
+    assert res.ledger is not None
+    assert len(res.ledger) == len(res.history) == 6   # all 3 epochs retained, not just the last

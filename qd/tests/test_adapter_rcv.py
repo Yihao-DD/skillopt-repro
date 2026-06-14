@@ -30,7 +30,7 @@ class FakeEnvAdapter:
 def _producer(tmp_path, rollouts):
     items = []   # one object for gen AND sel => merged mode (RCV flips diff same-set)
     return SkillOptProducer(adapter=FakeEnvAdapter(rollouts), gen_items=items, sel_items=items,
-                            out_root=str(tmp_path))
+                            out_root=str(tmp_path), rcv=True)   # RCV mode: flips + AIM enrichment
 
 
 def test_propose_without_ledger_is_upstream_identical(tmp_path):

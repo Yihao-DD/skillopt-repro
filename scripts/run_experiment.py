@@ -260,29 +260,43 @@ def run(plan: Plan) -> dict:
           f"{'三集分离(忠于原文)' if separated else '合并模式(gen==gate)'}  "
           f"eval_budget={plan.eval_budget}  K=1 vs K={plan.k}")
 
-    def producer(tag):
+    def producer(tag, *, rcv: bool = False):
         return make_producer(gen_items=gen_items, sel_items=sel_items, data_root=data_root,
                              out_root=os.path.join(out, tag),
-                             workers=plan.workers, max_completion_tokens=plan.max_tokens)
+                             workers=plan.workers, max_completion_tokens=plan.max_tokens, rcv=rcv)
 
     base_prod = producer("baseline")
     base_score = base_prod.score(INITIAL)
-    base_cell = descriptor(base_prod.probe(INITIAL)).cell
-    print(f"baseline: hard={base_score}  cell={base_cell}")
+    base_d = descriptor(base_prod.probe(INITIAL))
+    base_cell, base_b = base_d.cell, base_d.b   # base_b: re-bin the baseline under the calibrated grid
+    print(f"baseline: hard={base_score}  cell={base_cell}  b={tuple(round(x, 3) for x in base_b)}")
 
     def run_arm(k: int, tag: str, *, use_ledger: bool = False):
+        # RCV co-routing: use_ledger drives BOTH the loop (expose res.ledger + pre_check)
+        # AND the adapter (rcv=True => flips+AIM). Faithful arms pass use_ledger=False, so
+        # rcv=False => plain epoch buffer (原文模式). The two are intentionally tied here.
         res = run_search(k=k, baseline_skill=INITIAL, baseline_score=base_score,
-                         eval_budget=plan.eval_budget, producer=producer(tag),
+                         eval_budget=plan.eval_budget, producer=producer(tag, rcv=use_ledger),
                          baseline_cell=(0 if k == 1 else base_cell), max_lr=4, min_lr=2,
-                         use_ledger=use_ledger, num_epochs=plan.num_epochs)
+                         use_ledger=use_ledger, num_epochs=plan.num_epochs,
+                         adaptive_bins=(k > 1), baseline_b=base_b)   # task #11: 自适应 binning for K>1
         print(f"[{tag}] best={res.best_score} n_occupied={res.n_occupied} "
               f"cross_cell={res.cross_cell_pickups} evals={res.expensive_evals}"
               + (f" ledger={len(res.ledger)}" if res.ledger is not None else ""))
         return res
 
-    r1 = run_arm(1, "k1")
-    rk = run_arm(plan.k, f"k{plan.k}")
-    rrcv = run_arm(plan.k, f"k{plan.k}rcv", use_ledger=True) if plan.rcv else None
+    # Arms are independent (separate counters / producers / out-dirs, read-only baseline)
+    # → run them CONCURRENTLY to overlap each arm's serial step→epoch chain (~2× wall-clock;
+    # more workers can't shorten that serial chain). Total DeepSeek concurrency ~doubles —
+    # watch logs for rate-limit errors (errored rollouts would score FAIL and corrupt the run).
+    from concurrent.futures import ThreadPoolExecutor
+    _specs = [(1, "k1", False), (plan.k, f"k{plan.k}", False)]
+    if plan.rcv:
+        _specs.append((plan.k, f"k{plan.k}rcv", True))
+    with ThreadPoolExecutor(max_workers=len(_specs)) as _ex:
+        _futs = [(tag, _ex.submit(run_arm, kk, tag, use_ledger=ul)) for kk, tag, ul in _specs]
+        _res = {tag: f.result() for tag, f in _futs}
+    r1, rk, rrcv = _res["k1"], _res[f"k{plan.k}"], _res.get(f"k{plan.k}rcv")
 
     try:
         from skillopt.model import get_token_summary

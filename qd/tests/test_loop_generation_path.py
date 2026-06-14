@@ -26,7 +26,7 @@ class FakeProducer:
     pool_size: int = 1
     _calls: int = field(default=0)
 
-    def propose(self, skill, *, step, target_cell=None):
+    def propose(self, skill, *, step, target_cell=None, ledger=None):
         return {"edits": [{"text": f"|s{step}.{j}"} for j in range(self.pool_size)], "reasoning": "fake"}
 
     def apply(self, skill, patch):
@@ -86,7 +86,7 @@ def _celled_producer() -> CandidateProducer:
     LO = "x = 1\ny = 2\nz = 3\nw = 4\n"                    # ~0 op-density
     n = {"i": 0}
 
-    def propose(skill, *, step, target_cell=None):
+    def propose(skill, *, step, target_cell=None, ledger=None):
         return {"edits": [{"text": f".{step}"}]}
 
     def apply(skill, patch):
@@ -153,7 +153,7 @@ def test_both_arms_share_the_same_frozen_baseline() -> None:
     r1 = run_search(k=1, baseline_skill=base_sk, baseline_score=base_s, eval_budget=1,
                     producer=FakeProducer(scores=[0.1]).as_producer())
     worse = CandidateProducer(
-        propose=lambda s, *, step, target_cell=None: {"edits": [{"text": ".x"}]},
+        propose=lambda s, *, step, target_cell=None, ledger=None: {"edits": [{"text": ".x"}]},
         apply=lambda s, p: s + ".x",
         score=lambda s: 0.1,
         probe=lambda s: [{"code": "x = 1\n"}],

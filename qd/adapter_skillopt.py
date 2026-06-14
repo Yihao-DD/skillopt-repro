@@ -31,6 +31,32 @@ def _verbalize_cell(cell: int) -> str:
             f"spreadsheet 操作密度{_AXIS_LEVELS[col]}的实现风格。")
 
 
+def _split_patches(raw_patches: list | None) -> tuple[list[dict], list[dict]]:
+    """Split reflect's raw patches into (failure_patches, success_patches), faithful
+    to ``SkillOpt/skillopt/engine/trainer.py::_normalise_patches`` (the stage between
+    ② reflect and ③ aggregate): extract the inner ``patch`` sub-dict and route by
+    ``source_type`` ("success" -> success list; missing/anything else -> failure,
+    matching the trainer's ``p.get("source_type", "failure")`` default).
+
+    run_minibatch_reflect tags each raw patch with ``source_type`` (reflect.py docstring
+    "Patch dicts (with source_type 'failure' or 'success')"); empty-edit patches are
+    dropped so they don't dilute the merge, exactly as the trainer does.
+    """
+    failure: list[dict] = []
+    success: list[dict] = []
+    for p in raw_patches or []:
+        if not isinstance(p, dict):
+            continue
+        inner = p.get("patch", p)
+        if not isinstance(inner, dict) or not inner.get("edits"):
+            continue
+        if p.get("source_type", "failure") == "success":
+            success.append(inner)
+        else:
+            failure.append(inner)
+    return failure, success
+
+
 def _flips(parent_results: list, cand_results: list, cap: int = 8) -> tuple:
     """Per-task correctness flips (parent vs candidate), from already-paid rollouts."""
     def _hardmap(results: list) -> dict:
@@ -83,6 +109,7 @@ class SkillOptProducer:
     sel_items: list              # D_sel — validation-gate set (score/probe)
     out_root: str
     slow_n: int = 20             # 原文 §3.6 slow-update sample count (from D_tr)
+    rcv: bool = False            # False=原文模式(plain buffer render) / True=RCV(flips+AIM, ADR-0007)
     _cache: dict = field(default_factory=dict)   # (skill_hash, tag) -> rollout results
 
     def _tag(self, items: list) -> str:
@@ -146,28 +173,60 @@ class SkillOptProducer:
             parts.append("== 指引 ==\n" + "\n".join(guidance))
         return "\n".join(parts)
 
+    def _buffer_context(self, ledger: "RejectionLedger | None") -> str:
+        """原文模式 (缺口 3): 只 render 被拒 buffer（方向 + 分数 drop），不调 AIM/flips。"""
+        if ledger is not None and len(ledger):
+            return ledger.render()
+        return ""
+
     def propose(self, skill: str, *, step: int, target_cell: int | None = None,
-                ledger: "RejectionLedger | None" = None) -> dict:
+                ledger: "RejectionLedger | None" = None, meta: str = "") -> dict:
         results = self._rollout(skill, self.gen_items)   # generate candidates on D_tr
         kwargs = {}
-        ctx = self._rcv_context(target_cell=target_cell, ledger=ledger)
+        # 原文模式(默认)只 render buffer；RCV(ADR-0007)才叠加 flips+AIM。
+        ctx = (self._rcv_context(target_cell=target_cell, ledger=ledger)
+               if self.rcv else self._buffer_context(ledger))
         if ctx:
             # Upstream-blessed injection channel: reflect renders this under
             # "## Previous Steps in This Epoch" — exactly the AVOID semantics.
             kwargs["step_buffer_context"] = ctx
+        meta_ctx = ""
+        if meta:   # 缺口 2: optimizer meta skill -> fork reflect's meta_skill_context (zero fork change)
+            from skillopt.optimizer.meta_skill import format_meta_skill_context
+            meta_ctx = format_meta_skill_context(meta)
+            kwargs["meta_skill_context"] = meta_ctx
         patches = self.adapter.reflect(
             results, skill, os.path.join(self.out_root, self._tag(self.gen_items), _skill_hash(skill)), **kwargs)
-        edits: list = []
-        for p in patches or []:
-            if p and isinstance(p.get("patch"), dict):
-                edits.extend(p["patch"].get("edits", []))
-        return {"edits": edits, "reasoning": f"deepseek-reflect@step{step}"}
+        # RED-LINE faithfulness: route reflect's patches through the SAME aggregate/merge
+        # stage as the fork (trainer.py ③: reflect→_normalise_patches→merge_patches), NOT
+        # flat-concat. K=1 thus reproduces apply(rank(MERGE(patches))), and meta flows to
+        # merge too (trainer passes meta_skill_context=active_meta_skill to merge as well).
+        failure_patches, success_patches = _split_patches(patches)
+        if not failure_patches and not success_patches:
+            # Mirrors the trainer's skip_no_patches guard — nothing to aggregate.
+            return {"edits": [], "reasoning": f"deepseek-reflect@step{step}(no patches)"}
+        from skillopt.gradient.aggregate import merge_patches
+        merged = merge_patches(
+            skill, failure_patches, success_patches,
+            update_mode="patch", meta_skill_context=meta_ctx,
+        )
+        return {"edits": (merged or {}).get("edits", []),
+                "reasoning": (merged or {}).get("reasoning", f"deepseek-reflect@step{step}")}
 
     def apply(self, skill: str, patch: dict) -> str:
         from skillopt.optimizer.skill import apply_patch_with_report
 
         new_skill, _reports = apply_patch_with_report(skill, patch)
         return new_skill
+
+    def _slow_rollout(self, skill: str) -> list[dict]:
+        """Roll out `skill` on the slow-update sample set, cached (shared by slow_update
+        & meta_update so the adjacent-epoch comparison is paid for only once)."""
+        key = (_skill_hash(skill), "slow")
+        if key not in self._cache:
+            self._cache[key] = self.adapter.rollout(
+                self.gen_items[: self.slow_n], skill, os.path.join(self.out_root, "slow", _skill_hash(skill)))
+        return self._cache[key]
 
     def slow_update(self, prev_skill: str, curr_skill: str) -> str:
         """原文 §3.6: roll out prev & curr skill on slow-update samples (from D_tr),
@@ -177,10 +236,24 @@ class SkillOptProducer:
         samples = self.gen_items[: self.slow_n]
         if not samples:
             return ""
-        rp = self.adapter.rollout(samples, prev_skill, os.path.join(self.out_root, "slow", _skill_hash(prev_skill)))
-        rc = self.adapter.rollout(samples, curr_skill, os.path.join(self.out_root, "slow", _skill_hash(curr_skill)))
+        rp, rc = self._slow_rollout(prev_skill), self._slow_rollout(curr_skill)
         res = run_slow_update(curr_skill, rp, rc, samples, prev_skill=prev_skill)
         return (res or {}).get("slow_update_content", "")
+
+    def meta_update(self, prev_skill: str, curr_skill: str, prev_meta: str) -> str:
+        """原文 §3.6: optimizer-side memory from the adjacent-epoch comparison (same slow
+        samples as slow_update — rollouts reused). Accumulates on prev_meta; does NOT
+        modify the skill. Returns prev_meta unchanged when the optimizer produces nothing."""
+        from skillopt.optimizer.meta_skill import run_meta_skill
+        from skillopt.optimizer.slow_update import build_comparison_pairs
+
+        samples = self.gen_items[: self.slow_n]
+        if not samples:
+            return prev_meta
+        rp, rc = self._slow_rollout(prev_skill), self._slow_rollout(curr_skill)
+        pairs = build_comparison_pairs(rp, rc, samples)
+        res = run_meta_skill(prev_skill, curr_skill, pairs, prev_meta_skill_content=prev_meta)
+        return (res or {}).get("meta_skill_content", prev_meta) or prev_meta
 
     def apply_slow(self, skill: str, guidance: str) -> str:
         """原文 §3.6: inject the guidance into the skill's protected slow-update field."""
@@ -202,6 +275,7 @@ def make_producer(
     workers: int = 8,
     max_completion_tokens: int = 4096,
     edit_budget: int = 4,
+    rcv: bool = False,   # False=原文模式(faithful buffer render) / True=RCV(flips+AIM, ADR-0007)
 ) -> CandidateProducer:
     """Build a DeepSeek-backed CandidateProducer over SpreadsheetBench items.
 
@@ -224,6 +298,6 @@ def make_producer(
         max_completion_tokens=max_completion_tokens,
         edit_budget=edit_budget,
     )
-    p = SkillOptProducer(adapter=adapter, gen_items=gen_items, sel_items=sel_items, out_root=out_root)
+    p = SkillOptProducer(adapter=adapter, gen_items=gen_items, sel_items=sel_items, out_root=out_root, rcv=rcv)
     return CandidateProducer(propose=p.propose, apply=p.apply, score=p.score, probe=p.probe,
-                             slow_update=p.slow_update, apply_slow=p.apply_slow)
+                             slow_update=p.slow_update, apply_slow=p.apply_slow, meta_update=p.meta_update)

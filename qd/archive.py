@@ -90,6 +90,12 @@ class Archive:
         is injected into the best skill without passing the step-level gate."""
         self._elites[self._normalize_cell(cell)] = Elite(skill=skill, score=score, step=step)
 
+    def replace_elites(self, elites: dict[int, Elite]) -> None:
+        """Re-key ALL elites under a new cell assignment (adaptive-binning recalibration,
+        task #11): the behavior grid is re-fit mid-search and every elite moves to its
+        new cell. Cells are validated against ``k``; caller dedups (best per new cell)."""
+        self._elites = {self._normalize_cell(c): e for c, e in elites.items()}
+
     @property
     def best_cell(self) -> int:
         """Cell holding the global best elite (ties: earliest step)."""

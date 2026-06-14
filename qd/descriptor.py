@@ -120,3 +120,41 @@ def descriptor(trajs: list[dict], nbins: int = 4) -> Descriptor:
     """Full pipeline: probe trajectories → μ → Tier-A b → cell."""
     b = project(mu(trajs))
     return Descriptor(b=b, cell=cell_of(b, nbins))
+
+
+@dataclass(frozen=True)
+class CellGrid:
+    """Behavior grid for the archive. The uniform default reproduces ``cell_of`` (the
+    fixed [0,1]/nbins grid calibrated for cross-TASK spread). ``calibrate`` sets
+    per-axis QUANTILE cut-points from a sample of behavior points so a narrow SEARCH
+    band spreads across cells instead of collapsing — validated offline: native
+    2-4/16 → quantile 13-15/16 on held-out skills. Edges are FROZEN once set, so a
+    skill's cell never shifts mid-search (archive-stable)."""
+
+    nbins: int = 4
+    edges: tuple = ()      # ((x cut-points), (y cut-points)); empty => uniform
+
+    @classmethod
+    def uniform(cls, nbins: int = 4) -> "CellGrid":
+        return cls(nbins=nbins, edges=())
+
+    @classmethod
+    def calibrate(cls, points: list[tuple[float, float]], nbins: int = 4) -> "CellGrid":
+        """Per-axis quantile cut-points (nbins-1 each) from the points' distribution."""
+        if len(points) < nbins:
+            return cls.uniform(nbins)   # too few points for meaningful quantiles (would degenerate)
+
+        def cuts(vals: list[float]) -> tuple[float, ...]:
+            s = sorted(vals)
+            n = len(s)
+            return tuple(s[min((q * n) // nbins, n - 1)] for q in range(1, nbins))
+
+        return cls(nbins=nbins, edges=(cuts([p[0] for p in points]), cuts([p[1] for p in points])))
+
+    def cell_of(self, b: tuple[float, float]) -> int:
+        if not self.edges:
+            return cell_of(b, self.nbins)
+        ex, ey = self.edges
+        bx = sum(1 for e in ex if b[0] >= e)
+        by = sum(1 for e in ey if b[1] >= e)
+        return bx * self.nbins + by
