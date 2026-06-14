@@ -1,0 +1,166 @@
+{
+  "min_skills": 8,
+  "min_tasks": 10,
+  "cohorts": [
+    {
+      "run": "full-dpsk-3way-s1",
+      "n_skills": 76,
+      "n_tasks": 40,
+      "D0_live_native": {
+        "occupied": 4,
+        "entropy": 1.689,
+        "pair_dist": 0.295
+      },
+      "D0_minmax": {
+        "occupied": 13,
+        "entropy": 3.271
+      },
+      "D1_hand_minmax": {
+        "occupied": 14,
+        "entropy": 3.382,
+        "pair_dist": 0.274
+      },
+      "D2_embed_minmax": {
+        "occupied": 13,
+        "entropy": 3.327,
+        "pair_dist": 0.287
+      },
+      "metricA": {
+        "mean_raw_distinct": 76.0,
+        "mean_struct_distinct": 75.9,
+        "max_struct_distinct": 76,
+        "frac_tasks_struct_le2": 0.0,
+        "mean_pair_jaccard": 0.338
+      },
+      "verdict": "MIXED — skills vary textually but behavioral spread stays low under every descriptor (D0=13, best alt=14); diversity is genuinely thin, QD has little to illuminate."
+    },
+    {
+      "run": "full-dpsk-rcv-full",
+      "n_skills": 75,
+      "n_tasks": 279,
+      "D0_live_native": {
+        "occupied": 4,
+        "entropy": 1.072,
+        "pair_dist": 0.283
+      },
+      "D0_minmax": {
+        "occupied": 14,
+        "entropy": 3.257
+      },
+      "D1_hand_minmax": {
+        "occupied": 12,
+        "entropy": 2.924,
+        "pair_dist": 0.24
+      },
+      "D2_embed_minmax": {
+        "occupied": 14,
+        "entropy": 2.961,
+        "pair_dist": 0.26
+      },
+      "metricA": {
+        "mean_raw_distinct": 75.0,
+        "mean_struct_distinct": 74.58,
+        "max_struct_distinct": 75,
+        "frac_tasks_struct_le2": 0.0,
+        "mean_pair_jaccard": 0.357
+      },
+      "verdict": "MIXED — skills vary textually but behavioral spread stays low under every descriptor (D0=14, best alt=14); diversity is genuinely thin, QD has little to illuminate."
+    },
+    {
+      "run": "full-dpsk-3way-s2",
+      "n_skills": 74,
+      "n_tasks": 40,
+      "D0_live_native": {
+        "occupied": 3,
+        "entropy": 0.635,
+        "pair_dist": 0.313
+      },
+      "D0_minmax": {
+        "occupied": 14,
+        "entropy": 3.345
+      },
+      "D1_hand_minmax": {
+        "occupied": 12,
+        "entropy": 3.295,
+        "pair_dist": 0.279
+      },
+      "D2_embed_minmax": {
+        "occupied": 11,
+        "entropy": 3.247,
+        "pair_dist": 0.336
+      },
+      "metricA": {
+        "mean_raw_distinct": 74.0,
+        "mean_struct_distinct": 73.92,
+        "max_struct_distinct": 74,
+        "frac_tasks_struct_le2": 0.0,
+        "mean_pair_jaccard": 0.345
+      },
+      "verdict": "MIXED — skills vary textually but behavioral spread stays low under every descriptor (D0=14, best alt=12); diversity is genuinely thin, QD has little to illuminate."
+    },
+    {
+      "run": "full-dpsk-3way-s3",
+      "n_skills": 67,
+      "n_tasks": 40,
+      "D0_live_native": {
+        "occupied": 4,
+        "entropy": 0.969,
+        "pair_dist": 0.293
+      },
+      "D0_minmax": {
+        "occupied": 12,
+        "entropy": 3.28
+      },
+      "D1_hand_minmax": {
+        "occupied": 15,
+        "entropy": 3.592,
+        "pair_dist": 0.322
+      },
+      "D2_embed_minmax": {
+        "occupied": 13,
+        "entropy": 3.425,
+        "pair_dist": 0.332
+      },
+      "metricA": {
+        "mean_raw_distinct": 67.0,
+        "mean_struct_distinct": 66.97,
+        "max_struct_distinct": 67,
+        "frac_tasks_struct_le2": 0.0,
+        "mean_pair_jaccard": 0.354
+      },
+      "verdict": "MIXED — skills vary textually but behavioral spread stays low under every descriptor (D0=12, best alt=15); diversity is genuinely thin, QD has little to illuminate."
+    },
+    {
+      "run": "preflight-rcv-n20",
+      "n_skills": 38,
+      "n_tasks": 20,
+      "D0_live_native": {
+        "occupied": 3,
+        "entropy": 0.848,
+        "pair_dist": 0.303
+      },
+      "D0_minmax": {
+        "occupied": 12,
+        "entropy": 3.314
+      },
+      "D1_hand_minmax": {
+        "occupied": 13,
+        "entropy": 3.347,
+        "pair_dist": 0.308
+      },
+      "D2_embed_minmax": {
+        "occupied": 10,
+        "entropy": 2.942,
+        "pair_dist": 0.275
+      },
+      "metricA": {
+        "mean_raw_distinct": 38.0,
+        "mean_struct_distinct": 37.95,
+        "max_struct_distinct": 38,
+        "frac_tasks_struct_le2": 0.0,
+        "mean_pair_jaccard": 0.313
+      },
+      "verdict": "MIXED — skills vary textually but behavioral spread stays low under every descriptor (D0=12, best alt=13); diversity is genuinely thin, QD has little to illuminate."
+    }
+  ]
+}

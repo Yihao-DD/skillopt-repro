@@ -1,0 +1,81 @@
+{
+  "split": "md5-parity",
+  "knn": 5,
+  "cohorts": [
+    {
+      "run": "full-dpsk-rcv-full",
+      "n_skills": 75,
+      "n_train": 148,
+      "n_test": 132,
+      "greedy_test": 0.508,
+      "routers": {
+        "cluster4": 0.508,
+        "cluster8": 0.545,
+        "knn": 0.561
+      },
+      "best_router_test": 0.561,
+      "best_realizable_gain": 0.053,
+      "oracle_union_test": 0.864,
+      "verdict": "REALIZABLE GAIN +0.053 from a finer router (0.561 vs greedy 0.508) — complementarity has harvestable structure; pursue competence router."
+    },
+    {
+      "run": "full-dpsk-3way-s1",
+      "n_skills": 72,
+      "n_train": 23,
+      "n_test": 17,
+      "greedy_test": 0.588,
+      "routers": {
+        "cluster4": 0.588,
+        "knn": 0.529
+      },
+      "best_router_test": 0.588,
+      "best_realizable_gain": -0.0,
+      "oracle_union_test": 0.824,
+      "verdict": "FLAT (-0.000); no finer router beats greedy out-of-sample (oracle ceiling +0.236 is unharvestable) -> treat as noise."
+    },
+    {
+      "run": "full-dpsk-3way-s2",
+      "n_skills": 70,
+      "n_train": 23,
+      "n_test": 17,
+      "greedy_test": 0.412,
+      "routers": {
+        "cluster4": 0.353,
+        "knn": 0.412
+      },
+      "best_router_test": 0.412,
+      "best_realizable_gain": 0.0,
+      "oracle_union_test": 0.882,
+      "verdict": "FLAT (+0.000); no finer router beats greedy out-of-sample (oracle ceiling +0.470 is unharvestable) -> treat as noise."
+    },
+    {
+      "run": "full-dpsk-3way-s3",
+      "n_skills": 63,
+      "n_train": 23,
+      "n_test": 17,
+      "greedy_test": 0.471,
+      "routers": {
+        "cluster4": 0.529,
+        "knn": 0.471
+      },
+      "best_router_test": 0.529,
+      "best_realizable_gain": 0.058,
+      "oracle_union_test": 0.824,
+      "verdict": "REALIZABLE GAIN +0.058 from a finer router (0.529 vs greedy 0.471) — complementarity has harvestable structure; pursue competence router."
+    },
+    {
+      "run": "preflight-rcv-n20",
+      "n_skills": 38,
+      "n_train": 11,
+      "n_test": 9,
+      "greedy_test": 0.444,
+      "routers": {
+        "knn": 0.444
+      },
+      "best_router_test": 0.444,
+      "best_realizable_gain": -0.0,
+      "oracle_union_test": 0.889,
+      "verdict": "FLAT (-0.000); no finer router beats greedy out-of-sample (oracle ceiling +0.445 is unharvestable) -> treat as noise."
+    }
+  ]
+}

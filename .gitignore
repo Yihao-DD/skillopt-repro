@@ -15,3 +15,8 @@ runs/
 
 # air-gap 发包产物（scripts/make_bundle.py 输出）
 dist/
+
+# 本地草稿/中间产物/密钥脚本（勿入库；tools/_autodl_* 含密码用法）
+/_*
+qdaif_extracted.txt
+tools/_*

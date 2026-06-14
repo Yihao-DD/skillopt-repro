@@ -1,0 +1,49 @@
+{
+  "run": "runs/full-final-s1",
+  "n_sel_items": 40,
+  "n_trials": 300,
+  "seed": 42,
+  "arms": {
+    "k1": {
+      "pool": 24,
+      "greedy_holdout": 0.4738,
+      "oracle_holdout": 0.5548,
+      "copeland_holdout": 0.4503,
+      "oracle_regret": 0.081,
+      "copeland_gain": -0.0235,
+      "copeland_gain_ci95": [
+        -0.15,
+        0.0
+      ],
+      "discard_rate": 0.65
+    },
+    "k4": {
+      "pool": 31,
+      "greedy_holdout": 0.3915,
+      "oracle_holdout": 0.5575,
+      "copeland_holdout": 0.401,
+      "oracle_regret": 0.166,
+      "copeland_gain": 0.0095,
+      "copeland_gain_ci95": [
+        -0.1,
+        0.2
+      ],
+      "discard_rate": 1.0
+    }
+  },
+  "verdict": {
+    "k4_oracle_regret": 0.166,
+    "k1_oracle_regret": 0.081,
+    "k4_copeland_gain": 0.0095,
+    "k1_copeland_gain": -0.0235,
+    "k4_oracle_holdout_advantage_over_k1": 0.0027,
+    "k4_greedy_holdout_advantage_over_k1": -0.0823,
+    "robust_gate_beats_strict_either_arm": true,
+    "qd_pool_has_more_latent_value": false
+  },
+  "caveats": [
+    "holdout-val is in-distribution, NOT test",
+    "tests SELECTION over existing pool, NOT mutation stepping-stone chains",
+    "pools predate the merge_patches fix"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "warmup_frac": 0.5,
+  "cohorts": [
+    {
+      "run": "full-dpsk-rcv-full",
+      "n_skills": 75,
+      "n_warmup": 37,
+      "n_heldout": 38,
+      "heldout_native_cells": 3,
+      "heldout_quantile_cells": 13,
+      "heldout_cvt_cells": 13
+    },
+    {
+      "run": "full-dpsk-3way-s1",
+      "n_skills": 72,
+      "n_warmup": 36,
+      "n_heldout": 36,
+      "heldout_native_cells": 4,
+      "heldout_quantile_cells": 14,
+      "heldout_cvt_cells": 11
+    },
+    {
+      "run": "full-dpsk-3way-s2",
+      "n_skills": 70,
+      "n_warmup": 35,
+      "n_heldout": 35,
+      "heldout_native_cells": 2,
+      "heldout_quantile_cells": 13,
+      "heldout_cvt_cells": 16
+    },
+    {
+      "run": "full-dpsk-3way-s3",
+      "n_skills": 63,
+      "n_warmup": 31,
+      "n_heldout": 32,
+      "heldout_native_cells": 4,
+      "heldout_quantile_cells": 15,
+      "heldout_cvt_cells": 14
+    }
+  ]
+}

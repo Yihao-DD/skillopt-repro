@@ -1,0 +1,99 @@
+{
+  "folds": 5,
+  "knn": 5,
+  "cohorts": [
+    {
+      "run": "full-dpsk-rcv-full",
+      "n_skills": 75,
+      "n_tasks": 280,
+      "folds": 5,
+      "mean_greedy": 0.55,
+      "mean_router": 0.559,
+      "mean_gain": 0.01,
+      "std_gain": 0.079,
+      "min_gain": -0.123,
+      "max_gain": 0.107,
+      "per_fold_gain": [
+        0.016,
+        0.107,
+        0.065,
+        -0.017,
+        -0.123
+      ]
+    },
+    {
+      "run": "full-dpsk-3way-s1",
+      "n_skills": 72,
+      "n_tasks": 40,
+      "folds": 5,
+      "mean_greedy": 0.553,
+      "mean_router": 0.553,
+      "mean_gain": 0.0,
+      "std_gain": 0.0,
+      "min_gain": 0.0,
+      "max_gain": 0.0,
+      "per_fold_gain": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "run": "full-dpsk-3way-s2",
+      "n_skills": 70,
+      "n_tasks": 40,
+      "folds": 5,
+      "mean_greedy": 0.561,
+      "mean_router": 0.644,
+      "mean_gain": 0.083,
+      "std_gain": 0.118,
+      "min_gain": -0.091,
+      "max_gain": 0.25,
+      "per_fold_gain": [
+        0.143,
+        -0.091,
+        0.25,
+        0.111,
+        0.0
+      ]
+    },
+    {
+      "run": "full-dpsk-3way-s3",
+      "n_skills": 63,
+      "n_tasks": 40,
+      "folds": 5,
+      "mean_greedy": 0.498,
+      "mean_router": 0.583,
+      "mean_gain": 0.085,
+      "std_gain": 0.129,
+      "min_gain": 0.0,
+      "max_gain": 0.333,
+      "per_fold_gain": [
+        0.0,
+        0.091,
+        0.0,
+        0.333,
+        0.0
+      ]
+    },
+    {
+      "run": "preflight-rcv-n20",
+      "n_skills": 38,
+      "n_tasks": 20,
+      "folds": 3,
+      "mean_greedy": 0.405,
+      "mean_router": 0.508,
+      "mean_gain": 0.103,
+      "std_gain": 0.074,
+      "min_gain": 0.0,
+      "max_gain": 0.167,
+      "per_fold_gain": [
+        0.0,
+        0.143,
+        0.167
+      ]
+    }
+  ]
+}

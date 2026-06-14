@@ -72,27 +72,26 @@ A（改 trainer）最忠实但 1-2 天高风险（已否决）。**B：在 qd/lo
 | epoch 循环 + slow update force-accept（loop num_epochs；archive force_set/best_cell） | `0f6a003` | ✅ |
 | adapter slow_update 包装 fork run_slow_update + `--num-epochs` 接线 | `a62c006` | ✅ |
 | **缺口 1**：slow lesson 注入**所有 occupied elite**（非只 best，对齐全局领域知识语义） | `7d1a56b` | ✅ |
+| **缺口 3**：epoch-local rejected buffer **两臂默认开**（loop 每 epoch 重置+线程+append；adapter `rcv=False` 原文模式 plain render，`rcv=True` 才 RCV flips/AIM；K=1 inline 保 gate 红线） | 本次(working tree, 待提交) | ✅ |
+| **缺口 2**：optimizer meta skill **两臂都接**（loop `active_meta` 每 epoch 边界 `meta_update` 累积+线程；adapter 包装 fork `run_meta_skill`/`format_meta_skill_context`，复用 slow rollout；零 fork 改动） | 本次(working tree, 待提交) | ✅ |
 | 本计划文档 | `db5153d`→本次 | ✅ |
 
-当前测试：**105 passed**（zero-API）。
+当前测试：**115 passed**（zero-API）。缺口 2/3 已在 working tree 完成并通过 code-review（0 CRITICAL/HIGH；2 MEDIUM + 2 LOW 已修），**尚未 commit**（等用户指示）。
 
 ---
 
 ## 5. 剩余待办（按顺序，新会话从这里接）
 
-### 缺口 3：rejected buffer 两臂默认开（贡献 +4.6，优先）
-- **现状**：原文标配，但我们只 RCV(use_ledger K>1) 模式传 `step_buffer_context` → 三臂（含 greedy K=1）都缺。
-- **设计**：两臂（**含 K=1**）默认维护 epoch-local rejected buffer（被拒 edits + score drop）+ propose 传 `ledger.render`（**不含** AIM/flips —— 那是 RCV 增强，已盖棺）。
-- **难点**：要改 K=1 的 propose 契约传 ledger（现有 K=1 测试假设 propose 无 ledger kwarg）；K=1+buffer 仍 == 原文（buffer 只改 propose 输入，不碰 gate 逻辑；原文 K=1 本就有 buffer）—— 保红线测试。
-- **与 RCV 关系**：原文 buffer = RCV 的"裸基础"（ledger.render 去掉 flips/AIM）。复用 ledger 基础设施，加"原文模式"（adapter.propose 只 render ledger，不调 AIM/flips）。
-
-### 缺口 2：meta skill 两臂都接（贡献 +1.8，次要）
-- 两臂都接 fork `format_meta_skill_context`（optimizer 端编辑经验，跨格累积），propose 传 `meta_skill_context`。对称，不只给 QD。
+### ✅ 缺口 3 + 缺口 2 已完成（本次会话，working tree，115 passed）
+- **缺口 3**（rejected buffer 两臂默认开）：epoch-local buffer 在 `qd/loop.py run_search` 每 epoch 重置、线程给两臂 propose（含 K=1，inline 不再走 `produce_and_score_candidate`）、每步 append（accept+reject + 方向 + 分数 delta）。`res.ledger` 仍是 RCV 工件（faithful 模式 None；RCV 跨 epoch 累积）。adapter `rcv=False`=原文模式（`_buffer_context` 只 `ledger.render()`，**不调** AIM/flips）；`rcv=True`=RCV（`_rcv_context`）。红线：K=1 gate 等价不变（buffer 只改 propose 输入）。测试 `test_loop_buffer.py` / `test_adapter_buffer.py`。
+- **缺口 2**（optimizer meta skill 两臂都接）：`qd/loop.py` 持 `active_meta`，每 epoch 边界 `producer.meta_update(epoch_start_skill, epoch_best, prev_meta)` 累积、线程给 propose（仅非空时）；**不改 skill 文档**（区别于 slow）。adapter `meta_update` 复用 slow rollout（`_slow_rollout` 缓存共享）+ fork `build_comparison_pairs`/`run_meta_skill`；propose 传 `meta_skill_context=format_meta_skill_context(meta)`（fork reflect 原生支持，**零 fork 改动**）。测试在 `test_loop_slow_meta.py`。
+- **L2 修正**（faithful 细节）：epoch 边界先抓 `epoch_best`（slow 注入前）再喂给 slow+meta，对齐 trainer 的 `epoch_last_step_skill`（pre-slow）。
+- **已知小偏差**（threats 标注）：`epoch_start_skill`（prev）含上个 epoch 的 slow 注入，而 trainer 的 prev 是 pre-slow last-step —— 与 slow（缺口1）共有的小偏差，未深修。
 
 ### 次要简化（threats 标注，可不补）
 - minibatch-40 随机采样：原文每 step 采样 40 题 batch，我们用全 gen_items。次要。
 
-### 真跑（缺口 2/3 完成后）
+### 真跑（**所有缺口已完成 → 现在可跑**）
 - **前置**：AutoDL 实例重新部署（代码全变了，重传 qd/ + scripts/）；**旧 DeepSeek key 轮换**（多轮跑暴露过）。
 - **配置**：`--full --gen-split train --gate-split val --num-epochs 4 --seed {1,2,3}`（两臂都跑原文完整：三集 + 4 epoch + slow + buffer + meta）。
 - **成本**：num_epochs=4 + slow update（每 epoch 额外 2×20 rollout）比单 epoch 贵 ~4-5×，3 seed 估 **~¥300-500**，跑前精算。
